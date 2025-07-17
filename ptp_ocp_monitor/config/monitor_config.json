@@ -1,0 +1,82 @@
+{
+  "monitor_settings": {
+    "sysfs_poll_interval": 1.0,
+    "ftrace_buffer_size": 4096,
+    "log_level": "INFO",
+    "save_interval": 300,
+    "data_retention_days": 7
+  },
+  
+  "sysfs_attributes": {
+    "always_monitor": [
+      "clock_source",
+      "gnss_sync",
+      "clock_status_drift",
+      "clock_status_offset"
+    ],
+    
+    "periodic_monitor": [
+      "sma1", "sma2", "sma3", "sma4",
+      "utc_tai_offset",
+      "holdover",
+      "tod_protocol",
+      "serialnum"
+    ],
+    
+    "on_change_monitor": [
+      "available_clock_sources",
+      "available_sma_inputs",
+      "available_sma_outputs"
+    ]
+  },
+  
+  "function_trace": {
+    "high_frequency": [
+      "ptp_ocp_gettimex",
+      "ptp_ocp_adjtime",
+      "ptp_ocp_adjfine"
+    ],
+    
+    "medium_frequency": [
+      "ptp_ocp_ts_enable",
+      "ptp_ocp_signal_enable",
+      "ptp_ocp_sma_store"
+    ],
+    
+    "low_frequency": [
+      "ptp_ocp_probe",
+      "ptp_ocp_remove",
+      "ptp_ocp_watchdog",
+      "ptp_ocp_read_eeprom"
+    ],
+    
+    "duration_threshold_us": 100
+  },
+  
+  "alerts": {
+    "gnss_sync_loss": {
+      "enabled": true,
+      "threshold": 0,
+      "action": "log_error"
+    },
+    
+    "clock_drift_high": {
+      "enabled": true,
+      "threshold_ppb": 1000,
+      "action": "log_warning"
+    },
+    
+    "function_slow": {
+      "enabled": true,
+      "threshold_ms": 10,
+      "action": "log_warning"
+    }
+  },
+  
+  "output": {
+    "formats": ["json", "csv"],
+    "compress": true,
+    "rotate_size_mb": 100,
+    "rotate_count": 10
+  }
+}
