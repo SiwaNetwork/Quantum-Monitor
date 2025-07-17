@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIST="$(awk -F= '/^NAME/{print tolower($2)}' /etc/os-release|awk 'gsub(/[" ]/,x) + 1')"
+
+KVER=$(uname -r)
+default_install=1
+
+if [ "$*" == "install" ]; then
+    INSTALL=1
+fi
+
+case "$DIST" in
+    debian*|ubuntu)
+        KDIR=/usr/src/linux-headers-${KVER}
+        ;;
+    centos*)
+        KDIR=/usr/src/kernels/${KVER}
+        ;;
+esac
+
+if [ -e ./ksrc ]; then
+    KDIR=./ksrc
+    default_install=0
+fi
+
+if [ ! -d "${KDIR:-}" ]; then
+    echo "Could not locate kernel source for distribution '$DIST'"
+    exit 1
+fi
+
+make -C "${KDIR}" M="${PWD}"
+
+if [ "${INSTALL:-$default_install}" == 1 ]; then
+    echo "installing module"
+    ln -sf "${PWD}"/ptp_ocp.ko /lib/modules/"${KVER}"
+    depmod -a
+fi
