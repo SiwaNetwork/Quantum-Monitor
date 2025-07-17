@@ -4,14 +4,66 @@
 
 import time
 import json
+import signal
+import subprocess
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Callable
 import logging
 import threading
 from pathlib import Path
+from contextlib import contextmanager
 
 from ..core.device import QuantumPCIDevice
 from ..core.exceptions import QuantumPCIError
+
+
+@contextmanager
+def timeout(duration):
+    """Контекстный менеджер для операций с timeout"""
+    def timeout_handler(signum, frame):
+        raise TimeoutError(f"Operation timed out after {duration} seconds")
+    
+    # Сохраняем старый обработчик
+    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(duration)
+    
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
+
+
+def safe_run_command(command, timeout_sec=30, show_error=True):
+    """Безопасная версия run_command с timeout"""
+    try:
+        result = subprocess.run(
+            command, 
+            shell=True, 
+            capture_output=True, 
+            text=True, 
+            timeout=timeout_sec
+        )
+        
+        if result.returncode == 0:
+            return result.stdout.strip()
+        else:
+            error_msg = f"Command failed: {command}\nError: {result.stderr.strip()}"
+            if show_error:
+                print(error_msg)
+            return None
+            
+    except subprocess.TimeoutExpired:
+        error_msg = f"Command timeout after {timeout_sec}s: {command}"
+        if show_error:
+            print(error_msg)
+        return None
+        
+    except Exception as e:
+        error_msg = f"Command error: {command}\nException: {str(e)}"
+        if show_error:
+            print(error_msg)
+        return None
 
 
 class StatusReader:
@@ -30,6 +82,8 @@ class StatusReader:
         self._monitoring_active = False
         self._monitoring_thread = None
         self._callbacks = {}
+        self._stop_flag = False
+        self._stop_monitoring = False
         
     def get_full_status(self) -> Dict[str, Any]:
         """Получение полного статуса устройства"""
@@ -161,36 +215,81 @@ class StatusReader:
         self.logger.info("Status monitoring started")
     
     def stop_monitoring(self):
-        """Остановка мониторинга"""
-        if self._monitoring_active:
-            self._monitoring_active = False
-            if self._monitoring_thread:
-                self._monitoring_thread.join(timeout=5.0)
-            self.logger.info("Status monitoring stopped")
+        """Безопасная остановка всех процессов мониторинга"""
+        
+        self.logger.info("Stopping monitoring safely...")
+        
+        # Устанавливаем флаги остановки
+        self._monitoring_active = False
+        self._stop_flag = True
+        self._stop_monitoring = True
+        
+        # Ждем завершения потока с timeout
+        if self._monitoring_thread and self._monitoring_thread.is_alive():
+            self.logger.info("Waiting for monitoring thread to stop...")
+            self._monitoring_thread.join(timeout=5.0)
+            
+            if self._monitoring_thread.is_alive():
+                self.logger.warning("Warning: Monitoring thread did not stop gracefully")
+            else:
+                self.logger.info("Monitoring thread stopped successfully")
+        
+        self.logger.info("Status monitoring stopped")
     
     def _monitoring_loop(self, interval: float):
-        """Основной цикл мониторинга"""
+        """Безопасная версия _monitoring_loop с защитой от зависания"""
         last_status = {}
+        iteration_count = 0
+        max_iterations = 86400  # Максимум 24 часа при интервале 1 сек
         
-        while self._monitoring_active:
+        self.logger.info("Starting safe status monitoring loop...")
+        
+        while (self._monitoring_active and 
+               not self._stop_flag and 
+               iteration_count < max_iterations):
+            
+            iteration_count += 1
+            
             try:
-                current_status = self.get_full_status()
+                # Ограничиваем интервал
+                if interval < 0.1:  # Минимум 100мс
+                    interval = 0.1
+                elif interval > 3600:  # Максимум 1 час
+                    interval = 3600
                 
-                # Вызов callback для полного статуса
-                if "on_status_update" in self._callbacks:
-                    self._callbacks["on_status_update"](current_status)
+                # Получение статуса с timeout
+                try:
+                    with timeout(10):  # 10 секунд timeout
+                        current_status = self.get_full_status()
+                    
+                    # Вызов callback для полного статуса
+                    if "on_status_update" in self._callbacks:
+                        self._callbacks["on_status_update"](current_status)
+                    
+                    # Проверка изменений и вызов соответствующих callback
+                    self._check_status_changes(last_status, current_status)
+                    
+                    last_status = current_status
+                    
+                except TimeoutError:
+                    self.logger.warning(f"Status read timed out at iteration {iteration_count}")
+                    if "on_error" in self._callbacks:
+                        self._callbacks["on_error"](TimeoutError("Status read timeout"))
                 
-                # Проверка изменений и вызов соответствующих callback
-                self._check_status_changes(last_status, current_status)
-                
-                last_status = current_status
-                time.sleep(interval)
-                
+                # Безопасная пауза
+                try:
+                    time.sleep(interval)
+                except KeyboardInterrupt:
+                    self.logger.info("Monitoring interrupted by user")
+                    break
+                    
             except Exception as e:
-                self.logger.error(f"Error in monitoring loop: {e}")
+                self.logger.error(f"Error in monitoring loop iteration {iteration_count}: {e}")
                 if "on_error" in self._callbacks:
                     self._callbacks["on_error"](e)
-                time.sleep(interval)
+                time.sleep(1.0)  # Пауза при ошибке
+                
+        self.logger.info(f"Status monitoring loop completed after {iteration_count} iterations")
     
     def _check_status_changes(self, old_status: Dict[str, Any], new_status: Dict[str, Any]):
         """Проверка изменений статуса и вызов соответствующих callback"""
@@ -271,3 +370,78 @@ class StatusReader:
         except Exception as e:
             self.logger.error(f"Error exporting status: {e}")
             return False
+    
+    def safe_continuous_monitoring(self, duration=None, interval=1, format_type="json", output_file=None):
+        """Безопасная версия continuous_monitoring с защитой от зависания"""
+        
+        # Флаг остановки
+        self._stop_monitoring = False
+        
+        # Максимальное количество итераций для безопасности  
+        max_iterations = 10000 if duration is None else int(duration / interval) + 100
+        iteration_count = 0
+        
+        start_time = time.time()
+        
+        self.logger.info("Starting safe monitoring...")
+        self.logger.info(f"Duration: {duration}, Interval: {interval}, Max iterations: {max_iterations}")
+        
+        if output_file:
+            self.logger.info(f"Output file: {output_file}")
+        
+        try:
+            while (iteration_count < max_iterations and 
+                   not self._stop_monitoring):
+                
+                current_time = time.time()
+                iteration_count += 1
+                
+                # Проверка времени выполнения
+                if duration and (current_time - start_time) >= duration:
+                    self.logger.info(f"Duration limit reached: {duration} seconds")
+                    break
+                
+                # Проверка каждые 100 итераций
+                if iteration_count % 100 == 0:
+                    self.logger.info(f"Iteration {iteration_count}/{max_iterations}")
+                
+                try:
+                    # Получение статуса с timeout
+                    with timeout(10):  # 10 секунд timeout
+                        status = self.get_full_status()
+                    
+                    # Вывод статуса
+                    if format_type == "json":
+                        output = json.dumps(status, indent=2)
+                    elif format_type == "compact":
+                        output = self._format_compact_status(status) if hasattr(self, '_format_compact_status') else str(status)
+                    else:
+                        output = str(status)
+                    
+                    if output_file:
+                        with open(output_file, 'a') as f:
+                            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}]\n")
+                            f.write(output + "\n\n")
+                    else:
+                        self.logger.info(f"[{time.strftime('%H:%M:%S')}] Status updated")
+                        
+                except TimeoutError:
+                    self.logger.warning(f"Warning: Status read timed out at iteration {iteration_count}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error getting status at iteration {iteration_count}: {e}")
+                    
+                # Безопасная пауза
+                try:
+                    time.sleep(interval)
+                except KeyboardInterrupt:
+                    self.logger.info("Monitoring interrupted by user")
+                    break
+                    
+        except KeyboardInterrupt:
+            self.logger.info("Monitoring stopped by user (Ctrl+C)")
+        except Exception as e:
+            self.logger.error(f"Critical error in monitoring: {e}")
+        finally:
+            self.logger.info(f"Monitoring completed. Total iterations: {iteration_count}")
+            self._stop_monitoring = True

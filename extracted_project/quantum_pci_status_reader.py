@@ -8,11 +8,62 @@ import os
 import sys
 import time
 import json
+import signal
 import argparse
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-import subprocess
+from contextlib import contextmanager
+
+
+@contextmanager
+def timeout(duration):
+    """Контекстный менеджер для операций с timeout"""
+    def timeout_handler(signum, frame):
+        raise TimeoutError(f"Operation timed out after {duration} seconds")
+    
+    # Сохраняем старый обработчик
+    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(duration)
+    
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
+
+
+def safe_run_command(command, timeout_sec=30, show_error=True):
+    """Безопасная версия run_command с timeout"""
+    try:
+        result = subprocess.run(
+            command, 
+            shell=True, 
+            capture_output=True, 
+            text=True, 
+            timeout=timeout_sec
+        )
+        
+        if result.returncode == 0:
+            return result.stdout.strip()
+        else:
+            error_msg = f"Command failed: {command}\nError: {result.stderr.strip()}"
+            if show_error:
+                print(error_msg)
+            return None
+            
+    except subprocess.TimeoutExpired:
+        error_msg = f"Command timeout after {timeout_sec}s: {command}"
+        if show_error:
+            print(error_msg)
+        return None
+        
+    except Exception as e:
+        error_msg = f"Command error: {command}\nException: {str(e)}"
+        if show_error:
+            print(error_msg)
+        return None
 
 
 class QuantumPCIStatusReader:
@@ -21,6 +72,7 @@ class QuantumPCIStatusReader:
     def __init__(self, device_path: Optional[str] = None):
         self.device_path = self._find_device_path(device_path)
         self.last_status = {}
+        self._stop_monitoring = False
         
     def _find_device_path(self, device_path: Optional[str] = None) -> Optional[Path]:
         """Поиск пути к устройству"""
@@ -318,50 +370,84 @@ class QuantumPCIStatusReader:
     
     def monitor_status(self, interval: float = 1.0, duration: Optional[float] = None, 
                       output_file: Optional[str] = None, format_type: str = "json"):
-        """Мониторинг статуса в реальном времени"""
+        """Безопасная версия мониторинга статуса с защитой от зависания"""
         if not self.is_device_available():
             print("Error: Device not available")
             return
         
-        print(f"Starting status monitoring (interval: {interval}s)")
-        if duration:
-            print(f"Duration: {duration}s")
-        if output_file:
-            print(f"Output file: {output_file}")
+        # Флаг остановки
+        self._stop_monitoring = False
+        
+        # Максимальное количество итераций для безопасности  
+        max_iterations = 10000 if duration is None else int(duration / interval) + 100
+        iteration_count = 0
         
         start_time = time.time()
         
+        print("Starting safe monitoring...")
+        print(f"Duration: {duration}, Interval: {interval}, Max iterations: {max_iterations}")
+        
+        if output_file:
+            print(f"Output file: {output_file}")
+        
         try:
-            while True:
+            while (iteration_count < max_iterations and 
+                   not self._stop_monitoring):
+                
                 current_time = time.time()
+                iteration_count += 1
                 
                 # Проверка времени выполнения
                 if duration and (current_time - start_time) >= duration:
+                    print(f"Duration limit reached: {duration} seconds")
                     break
                 
-                # Получение статуса
-                status = self.get_full_status()
+                # Проверка каждые 100 итераций
+                if iteration_count % 100 == 0:
+                    print(f"Iteration {iteration_count}/{max_iterations}")
                 
-                # Вывод статуса
-                if format_type == "json":
-                    output = json.dumps(status, indent=2)
-                elif format_type == "compact":
-                    output = self._format_compact_status(status)
-                else:
-                    output = self._format_human_readable_status(status)
-                
-                # Вывод в файл или консоль
-                if output_file:
-                    with open(output_file, 'a') as f:
-                        f.write(output + "\\n")
-                else:
-                    print(output)
-                    print("-" * 50)
-                
-                time.sleep(interval)
-                
+                try:
+                    # Получение статуса с timeout
+                    with timeout(10):  # 10 секунд timeout
+                        status = self.get_full_status()
+                    
+                    # Вывод статуса
+                    if format_type == "json":
+                        output = json.dumps(status, indent=2)
+                    elif format_type == "compact":
+                        output = self._format_compact_status(status)
+                    else:
+                        output = self._format_human_readable_status(status)
+                    
+                    # Вывод в файл или консоль
+                    if output_file:
+                        with open(output_file, 'a') as f:
+                            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}]\n")
+                            f.write(output + "\n\n")
+                    else:
+                        print(f"[{time.strftime('%H:%M:%S')}] Status updated")
+                        print("-" * 50)
+                        
+                except TimeoutError:
+                    print(f"Warning: Status read timed out at iteration {iteration_count}")
+                    
+                except Exception as e:
+                    print(f"Error getting status at iteration {iteration_count}: {e}")
+                    
+                # Безопасная пауза
+                try:
+                    time.sleep(interval)
+                except KeyboardInterrupt:
+                    print("Monitoring interrupted by user")
+                    break
+                    
         except KeyboardInterrupt:
-            print("\\nMonitoring stopped by user")
+            print("Monitoring stopped by user (Ctrl+C)")
+        except Exception as e:
+            print(f"Critical error in monitoring: {e}")
+        finally:
+            print(f"Monitoring completed. Total iterations: {iteration_count}")
+            self._stop_monitoring = True
     
     def _format_compact_status(self, status: Dict[str, Any]) -> str:
         """Форматирование компактного статуса"""

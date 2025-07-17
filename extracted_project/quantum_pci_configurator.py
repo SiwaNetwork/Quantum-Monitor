@@ -5,6 +5,7 @@ QUANTUM-PCI Card Configurator
 """
 
 import os
+import signal
 import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, scrolledtext
@@ -12,6 +13,24 @@ import threading
 import time
 import json
 from pathlib import Path
+from contextlib import contextmanager
+
+
+@contextmanager
+def timeout(duration):
+    """Контекстный менеджер для операций с timeout"""
+    def timeout_handler(signum, frame):
+        raise TimeoutError(f"Operation timed out after {duration} seconds")
+    
+    # Сохраняем старый обработчик
+    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(duration)
+    
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 class QuantumPCIConfigurator:
@@ -26,6 +45,8 @@ class QuantumPCIConfigurator:
         self.device_info = {}
         self.status_update_thread = None
         self.status_running = False
+        self._stop_flag = False
+        self._stop_monitoring = False
         
         # Создание интерфейса
         self.create_widgets()
@@ -377,34 +398,91 @@ class QuantumPCIConfigurator:
             return None
     
     def detect_device(self):
-        """Обнаружение устройства QUANTUM-PCI"""
+        """Безопасное обнаружение устройства QUANTUM-PCI с timeout и проверками"""
+        
+        print("Starting safe device detection...")
         self.status_label.config(text="Detecting device...")
         
-        # Поиск устройства через lspci
-        pci_result = self.run_command("lspci | grep -i quantum", show_error=False)
-        if not pci_result:
-            pci_result = self.run_command("lspci | grep 0x0400", show_error=False)
-        
-        # Поиск в /sys/class/timecard/
-        timecard_path = Path("/sys/class/timecard")
+        # Флаг обнаружения
         device_found = False
         
-        if timecard_path.exists():
-            for device_dir in timecard_path.iterdir():
-                if device_dir.is_dir() and device_dir.name.startswith("ocp"):
-                    self.device_path = device_dir
-                    device_found = True
-                    break
+        try:
+            # Ограничиваем время поиска
+            with timeout(15):
+                # Поиск устройства через lspci с timeout
+                pci_result = self.run_command("lspci | grep -i quantum", show_error=False)
+                if not pci_result:
+                    pci_result = self.run_command("lspci | grep 0x0400", show_error=False)
+                
+                # Поиск в /sys/class/timecard/ с безопасными проверками
+                timecard_path = Path("/sys/class/timecard")
+                
+                if timecard_path.exists() and timecard_path.is_dir():
+                    print(f"Checking timecard directory: {timecard_path}")
+                    
+                    try:
+                        # Получаем список директорий с timeout
+                        device_dirs = [d for d in timecard_path.iterdir() 
+                                     if d.is_dir() and d.name.startswith("ocp")]
+                        
+                        for device_dir in device_dirs:
+                            print(f"Checking device: {device_dir}")
+                            
+                            # Проверяем основные файлы устройства
+                            essential_files = ["serialnum", "available_clock_sources"]
+                            files_exist = []
+                            
+                            for file_name in essential_files:
+                                file_path = device_dir / file_name
+                                try:
+                                    with timeout(2):  # 2 секунды на файл
+                                        exists = file_path.exists() and file_path.is_file()
+                                        files_exist.append(exists)
+                                        if exists:
+                                            # Проверяем возможность чтения
+                                            with timeout(2):
+                                                file_path.read_text()
+                                                
+                                except (TimeoutError, PermissionError, OSError) as e:
+                                    print(f"Cannot access {file_path}: {e}")
+                                    files_exist.append(False)
+                            
+                            # Если все основные файлы доступны
+                            if all(files_exist):
+                                self.device_path = device_dir
+                                device_found = True
+                                print(f"Device found and verified: {device_dir}")
+                                break
+                            else:
+                                print(f"Device {device_dir} failed verification")
+                                
+                    except PermissionError as e:
+                        print(f"Permission denied accessing timecard directory: {e}")
+                    except OSError as e:
+                        print(f"OS error accessing timecard directory: {e}")
+                else:
+                    print("Timecard directory not found or not accessible")
+                    
+        except TimeoutError:
+            print("Device detection timed out (15 seconds)")
+            device_found = False
+            
+        except Exception as e:
+            print(f"Unexpected error during device detection: {e}")
+            device_found = False
         
+        # Обновляем интерфейс
         if device_found:
             self.device_status_label.config(text=f"Device: {self.device_path.name}")
             self.status_label.config(text="Device detected")
+            print("Device detection successful")
             self.refresh_device_info()
             self.refresh_clock_sources()
             self.refresh_sma_config()
         else:
             self.device_status_label.config(text="Device: Not detected")
             self.status_label.config(text="No device found")
+            print("No device detected")
             messagebox.showwarning("Device Detection", 
                                  "QUANTUM-PCI device not found.\\n"
                                  "Please ensure the device is properly installed and the driver is loaded.")
@@ -765,41 +843,87 @@ class QuantumPCIConfigurator:
         self.log_status("Real-time monitoring started")
     
     def stop_monitoring(self):
-        """Остановка мониторинга"""
+        """Безопасная остановка всех процессов мониторинга"""
+        
+        print("Stopping monitoring safely...")
+        
+        # Устанавливаем флаги остановки
         self.status_running = False
+        self._stop_flag = True
+        
+        if hasattr(self, '_stop_monitoring'):
+            self._stop_monitoring = True
+        
+        # Ждем завершения потока с timeout
+        if hasattr(self, 'status_update_thread') and self.status_update_thread:
+            if self.status_update_thread.is_alive():
+                print("Waiting for monitoring thread to stop...")
+                self.status_update_thread.join(timeout=5.0)
+                
+                if self.status_update_thread.is_alive():
+                    print("Warning: Monitoring thread did not stop gracefully")
+                else:
+                    print("Monitoring thread stopped successfully")
+        
         self.log_status("Real-time monitoring stopped")
+        print("Monitoring stopped")
     
     def status_update_loop(self):
-        """Цикл обновления статуса"""
-        while self.status_running:
+        """Безопасная версия status_update_loop с защитой от зависания"""
+        
+        print("Starting safe status monitoring loop...")
+        iteration_count = 0
+        max_iterations = 86400  # Максимум 24 часа при интервале 1 сек
+        
+        while (self.status_running and 
+               not getattr(self, '_stop_flag', False) and 
+               iteration_count < max_iterations):
+            
+            iteration_count += 1
+            
             try:
-                interval = float(self.update_interval_var.get())
-            except ValueError:
-                interval = 1.0
-            
-            if self.device_path:
-                # Обновление ключевых параметров
-                timestamp = time.strftime("%H:%M:%S")
-                
-                # Clock source
+                # Получаем интервал обновления
                 try:
-                    clock_file = self.device_path / "clock_source"
-                    if clock_file.exists():
-                        clock_source = clock_file.read_text().strip()
-                        self.log_status(f"[{timestamp}] Clock source: {clock_source}")
-                except Exception:
-                    pass
+                    interval = float(self.update_interval_var.get())
+                    if interval < 0.1:  # Минимум 100мс
+                        interval = 0.1
+                    elif interval > 3600:  # Максимум 1 час
+                        interval = 3600
+                except (ValueError, AttributeError):
+                    interval = 1.0
                 
-                # GNSS sync
-                try:
-                    gnss_file = self.device_path / "gnss_sync"
-                    if gnss_file.exists():
-                        gnss_sync = gnss_file.read_text().strip()
-                        self.log_status(f"[{timestamp}] GNSS sync: {gnss_sync}")
-                except Exception:
-                    pass
-            
-            time.sleep(interval)
+                if self.device_path and self.device_path.exists():
+                    timestamp = time.strftime("%H:%M:%S")
+                    
+                    # Обновление параметров с timeout
+                    for param_name, file_name in [
+                        ("Clock source", "clock_source"),
+                        ("GNSS sync", "gnss_sync"),
+                        ("Serial number", "serialnum")
+                    ]:
+                        try:
+                            with timeout(3):  # 3 секунды на операцию
+                                param_file = self.device_path / file_name
+                                if param_file.exists():
+                                    value = param_file.read_text().strip()
+                                    if hasattr(self, 'log_status'):
+                                        self.log_status(f"[{timestamp}] {param_name}: {value}")
+                                        
+                        except TimeoutError:
+                            if hasattr(self, 'log_status'):
+                                self.log_status(f"[{timestamp}] {param_name}: TIMEOUT")
+                        except Exception as e:
+                            if hasattr(self, 'log_status'):
+                                self.log_status(f"[{timestamp}] {param_name}: ERROR - {e}")
+                
+                # Безопасная пауза
+                time.sleep(interval)
+                
+            except Exception as e:
+                print(f"Error in monitoring loop iteration {iteration_count}: {e}")
+                time.sleep(1.0)  # Пауза при ошибке
+                
+        print(f"Status monitoring loop completed after {iteration_count} iterations")
     
     def log_status(self, message):
         """Добавление сообщения в лог статуса"""
