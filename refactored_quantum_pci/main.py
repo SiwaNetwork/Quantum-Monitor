@@ -11,7 +11,6 @@ from pathlib import Path
 # Добавление текущей директории в путь Python
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from src.gui.main_window import QuantumPCIGUI
 from src.api.status_reader import StatusReader
 from src.core.device import QuantumPCIDevice
 from src.core.exceptions import QuantumPCIError, DeviceNotFoundError
@@ -83,8 +82,14 @@ def run_cli_mode(device_path: str = None):
 def run_gui_mode(device_path: str = None):
     """Запуск в режиме GUI"""
     try:
+        # Импортируем GUI только при необходимости
+        from src.gui.main_window import QuantumPCIGUI
         app = QuantumPCIGUI(device_path)
         app.run()
+    except ImportError as e:
+        print(f"Error: GUI dependencies not available: {e}")
+        print("Please install tkinter: sudo apt-get install python3-tk")
+        sys.exit(1)
     except Exception as e:
         print(f"Error starting GUI: {e}")
         sys.exit(1)
