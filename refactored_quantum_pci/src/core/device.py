@@ -137,26 +137,70 @@ class QuantumPCIDevice:
             if not file_path.exists():
                 raise DeviceAccessError(f"Required device file {file_name} not found")
     
-    def read_device_file(self, file_name: str) -> Optional[str]:
+    def read_device_file(self, file_name: str, timeout_sec: int = 5) -> Optional[str]:
         """
-        Безопасное чтение файла устройства с timeout
+        Безопасное чтение файла устройства с timeout и дополнительными проверками
         
         Args:
             file_name: Имя файла для чтения
+            timeout_sec: Таймаут операции в секундах
             
         Returns:
             Содержимое файла или None при ошибке
         """
         try:
             file_path = self.device_path / file_name
-            if file_path.exists() and file_path.is_file():
-                # Убираем signal-based timeout для потокобезопасности
+            
+            # Проверяем существование и доступность файла
+            if not file_path.exists():
+                self.logger.debug(f"File {file_name} does not exist")
+                return None
+                
+            if not file_path.is_file():
+                self.logger.debug(f"Path {file_name} is not a file")
+                return None
+            
+            # Проверяем права доступа на чтение
+            try:
+                # Простая проверка доступности
+                if not os.access(file_path, os.R_OK):
+                    self.logger.warning(f"No read permission for {file_name}")
+                    return None
+            except OSError:
+                self.logger.warning(f"Cannot check permissions for {file_name}")
+                return None
+            
+            # Читаем файл с таймаутом
+            start_time = time.time()
+            try:
                 with open(file_path, 'r') as f:
-                    content = f.read().strip()
+                    # Проверяем таймаут во время чтения
+                    content = ""
+                    while True:
+                        if time.time() - start_time > timeout_sec:
+                            self.logger.warning(f"Read timeout for {file_name}")
+                            return None
+                        
+                        chunk = f.read(1024)  # Читаем по кускам
+                        if not chunk:
+                            break
+                        content += chunk
+                        
+                        # Ограничиваем размер содержимого
+                        if len(content) > 10240:  # 10KB максимум
+                            self.logger.warning(f"File {file_name} too large, truncating")
+                            break
+                    
+                    content = content.strip()
                     self.logger.debug(f"Read from {file_name}: {content}")
                     return content
-        except (OSError, IOError) as e:
-            self.logger.error(f"Error reading {file_name}: {e}")
+                    
+            except (OSError, IOError, UnicodeDecodeError) as e:
+                self.logger.error(f"Error reading {file_name}: {e}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Unexpected error reading {file_name}: {e}")
             return None
     
     def write_device_file(self, file_name: str, value: str) -> bool:
