@@ -29,12 +29,27 @@ class ClockPanel:
         
         self.frame = ttk.Frame(parent)
         
-        # Список доступных источников синхронизации
-        self.available_sources = ["GNSS", "EXT", "EXT_PPS", "IRIG", "DCF", "MSF"]
+        # Список доступных источников синхронизации (согласно документации ядра Linux)
+        self.available_sources = ["NONE", "PPS", "TOD", "IRIG", "DCF"]
         
+        self._load_available_clock_sources()
         self._create_widgets()
         self._layout_widgets()
         self._load_clock_settings()
+        
+    def _load_available_clock_sources(self):
+        """Загрузка доступных источников синхронизации от устройства"""
+        if not self.device:
+            self.logger.info("Using standard clock sources from kernel documentation")
+            return
+            
+        try:
+            device_sources = self.device.get_available_clock_sources()
+            if device_sources:
+                self.available_sources = device_sources
+                self.logger.info(f"Loaded available clock sources: {self.available_sources}")
+        except Exception as e:
+            self.logger.warning(f"Error loading device clock sources, using defaults: {e}")
         
     def _create_widgets(self):
         """Создание виджетов панели синхронизации"""
@@ -68,6 +83,7 @@ class ClockPanel:
             values=self.available_sources,
             state="readonly"
         )
+        self.source_combo.bind("<<ComboboxSelected>>", self._on_clock_source_changed)
         
         self.apply_source_button = ttk.Button(
             self.control_frame,
@@ -190,6 +206,30 @@ class ClockPanel:
         # Info area
         self.info_frame.pack(fill=tk.BOTH, expand=True)
         self.info_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+    def _on_clock_source_changed(self, event=None):
+        """Обработчик изменения источника синхронизации"""
+        source = self.source_var.get()
+        self.logger.info(f"Clock source changed to: {source}")
+        self._show_clock_source_description(source)
+        
+    def _show_clock_source_description(self, source: str):
+        """Показать описание источника синхронизации"""
+        descriptions = {
+            "NONE": "No adjustments - clock runs freely without external synchronization",
+            "PPS": "Adjustments come from the PPS1 selector (default) - uses Pulse Per Second signals",
+            "TOD": "Adjustments from the GNSS/TOD module - GPS Time of Day synchronization",
+            "IRIG": "Adjustments from external IRIG-B signal - Inter-Range Instrumentation Group time code",
+            "DCF": "Adjustments from external DCF signal - German time signal DCF77"
+        }
+        
+        description = descriptions.get(source, "Unknown clock source")
+        
+        if source != "NONE":
+            messagebox.showinfo(
+                "Clock Source Description",
+                f"Clock Source: {source}\n\n{description}"
+            )
         
     def _load_clock_settings(self):
         """Загрузка текущих настроек синхронизации"""
@@ -384,3 +424,13 @@ class ClockPanel:
     def refresh(self):
         """Обновление панели (вызывается извне)"""
         self._refresh_settings()
+        
+    def update_device(self, device: Optional[QuantumPCIDevice]):
+        """Обновление ссылки на устройство"""
+        self.device = device
+        self._load_available_clock_sources()
+        
+        # Обновление значений комбобокса
+        self.source_combo['values'] = self.available_sources
+        
+        self._load_clock_settings()
