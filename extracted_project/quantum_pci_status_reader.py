@@ -358,12 +358,7 @@ class QuantumPCIStatusReader:
             "basic_info": self.get_basic_info(),
             "clock_status": self.get_clock_status(),
             "sma_status": self.get_sma_status(),
-            "generator_status": self.get_generator_status(),
-            "frequency_counter_status": self.get_frequency_counter_status(),
             "gnss_status": self.get_gnss_status(),
-            "timestamper_status": self.get_timestamper_status(),
-            "ptp_status": self.get_ptp_status(),
-            "pps_status": self.get_pps_status(),
         })
         
         return full_status
