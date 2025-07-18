@@ -308,6 +308,53 @@ class QuantumPCIDevice:
         
         return self.write_device_file(f"sma{port}_out", signal)
     
+    def set_sma_configuration(self, config: Dict[str, Any]) -> bool:
+        """
+        Установка полной конфигурации SMA портов
+        
+        Args:
+            config: Словарь с конфигурацией {'inputs': {...}, 'outputs': {...}}
+            
+        Returns:
+            True при успехе
+        """
+        try:
+            errors = []
+            success_count = 0
+            
+            # Применение входных портов
+            if 'inputs' in config:
+                for port_name, signal in config['inputs'].items():
+                    if signal and signal.lower() != 'none':
+                        try:
+                            port_num = int(port_name[-1])  # извлекаем номер из sma1, sma2, etc.
+                            if self.set_sma_input(port_num, signal):
+                                success_count += 1
+                        except Exception as e:
+                            errors.append(f"Failed to set {port_name} input to {signal}: {e}")
+            
+            # Применение выходных портов
+            if 'outputs' in config:
+                for port_name, signal in config['outputs'].items():
+                    if signal and signal.lower() != 'none':
+                        try:
+                            port_num = int(port_name[3])  # извлекаем номер из sma1_out, sma2_out, etc.
+                            if self.set_sma_output(port_num, signal):
+                                success_count += 1
+                        except Exception as e:
+                            errors.append(f"Failed to set {port_name} output to {signal}: {e}")
+            
+            if errors:
+                self.logger.warning(f"SMA configuration partially applied. Errors: {errors}")
+                return False
+            
+            self.logger.info(f"SMA configuration applied successfully ({success_count} changes)")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to apply SMA configuration: {e}")
+            return False
+    
     def get_clock_status(self) -> Dict[str, Any]:
         """Получение статуса часов"""
         status = {
