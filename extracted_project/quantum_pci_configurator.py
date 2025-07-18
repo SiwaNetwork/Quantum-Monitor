@@ -752,9 +752,13 @@ class QuantumPCIConfigurator:
         if gnss_sync_file.exists():
             try:
                 sync_status = gnss_sync_file.read_text().strip()
-                if "1" in sync_status or "sync" in sync_status.lower():
+                # Правильная проверка: SYNC означает синхронизацию, LOST означает потерю сигнала
+                if sync_status.upper() == "SYNC":
                     self.gnss_sync_var.set("GNSS: SYNCHRONIZED")
                     self.gnss_sync_label.config(foreground="green")
+                elif sync_status.upper().startswith("LOST"):
+                    self.gnss_sync_var.set("GNSS: LOST")
+                    self.gnss_sync_label.config(foreground="red")
                 else:
                     self.gnss_sync_var.set("GNSS: NOT SYNCHRONIZED")
                     self.gnss_sync_label.config(foreground="red")

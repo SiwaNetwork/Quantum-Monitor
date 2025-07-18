@@ -205,9 +205,14 @@ class ClockPanel:
             current_source = device_info.get('current_clock_source', 'Unknown')
             self.current_source_value.config(text=current_source)
             
-            # Статус GNSS
+            # Статус GNSS с цветовой индикацией
             gnss_status = device_info.get('gnss_sync', 'Unknown')
-            self.gnss_status_value.config(text=gnss_status)
+            if gnss_status.upper() == "SYNC":
+                self.gnss_status_value.config(text="SYNCHRONIZED", foreground="green")
+            elif gnss_status.upper().startswith("LOST"):
+                self.gnss_status_value.config(text="LOST", foreground="red")
+            else:
+                self.gnss_status_value.config(text=gnss_status, foreground="black")
             
             # Установка выбранного источника в комбобоксе
             if current_source in self.available_sources:

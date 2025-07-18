@@ -135,7 +135,14 @@ class StatusPanel:
                 gnss_sync = device_info.get('gnss_sync', 'Unknown')
                 
                 self.clock_source_value.config(text=clock_source)
-                self.gnss_status_value.config(text=gnss_sync)
+                
+                # Улучшенное отображение GNSS статуса с цветовой индикацией
+                if gnss_sync.upper() == "SYNC":
+                    self.gnss_status_value.config(text="SYNCHRONIZED", foreground="green")
+                elif gnss_sync.upper().startswith("LOST"):
+                    self.gnss_status_value.config(text="LOST", foreground="red")
+                else:
+                    self.gnss_status_value.config(text=gnss_sync, foreground="black")
             
             # Обновление детальной информации
             self._update_details(status)

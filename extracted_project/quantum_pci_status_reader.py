@@ -261,7 +261,8 @@ class QuantumPCIStatusReader:
         sync_value = self.read_file_safe(gnss_sync_file)
         if sync_value:
             gnss_status["sync"] = sync_value
-            gnss_status["synchronized"] = "1" in sync_value or "sync" in sync_value.lower()
+            # Правильная проверка: SYNC означает синхронизацию, LOST означает потерю сигнала
+            gnss_status["synchronized"] = sync_value.strip().upper() == "SYNC"
         
         return gnss_status
     
