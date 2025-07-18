@@ -29,9 +29,39 @@ class SMAPanel:
         
         self.frame = ttk.Frame(parent)
         
-        # Доступные сигналы будут загружены от устройства
-        self.available_input_signals = []
-        self.available_output_signals = []
+        # Доступные сигналы согласно документации Linux kernel (/sys/class/timecard/ocpN/available_sma_*)
+        self.available_input_signals = [
+            "None",     # signal input is disabled
+            "10Mhz",    # signal is used as the 10Mhz reference clock
+            "PPS1",     # signal is sent to the PPS1 selector
+            "PPS2",     # signal is sent to the PPS2 selector
+            "TS1",      # signal is sent to timestamper 1
+            "TS2",      # signal is sent to timestamper 2
+            "TS3",      # signal is sent to timestamper 3
+            "TS4",      # signal is sent to timestamper 4
+            "IRIG",     # signal is sent to the IRIG-B module
+            "DCF",      # signal is sent to the DCF module
+            "FREQ1",    # signal is sent to frequency counter 1
+            "FREQ2",    # signal is sent to frequency counter 2
+            "FREQ3",    # signal is sent to frequency counter 3
+            "FREQ4"     # signal is sent to frequency counter 4
+        ]
+        
+        self.available_output_signals = [
+            "10Mhz",    # output is from the 10Mhz reference clock
+            "PHC",      # output PPS is from the PHC clock
+            "MAC",      # output PPS is from the Miniature Atomic Clock
+            "GNSS1",    # output PPS is from the first GNSS module
+            "GNSS2",    # output PPS is from the second GNSS module
+            "IRIG",     # output is from the PHC, in IRIG-B format
+            "DCF",      # output is from the PHC, in DCF format
+            "GEN1",     # output is from frequency generator 1
+            "GEN2",     # output is from frequency generator 2
+            "GEN3",     # output is from frequency generator 3
+            "GEN4",     # output is from frequency generator 4
+            "GND",      # output is GND
+            "VCC"       # output is VCC
+        ]
         
         # Хранилище переменных для комбобоксов
         self.input_vars = {}
@@ -45,30 +75,31 @@ class SMAPanel:
     def _load_available_signals(self):
         """Загрузка доступных сигналов от устройства"""
         if not self.device:
-            # Fallback сигналы точно соответствующие драйверу ptp_ocp.c
-            self.available_input_signals = ["None", "10Mhz", "PPS1", "PPS2", "TS1", "TS2", "TS3", "TS4", "IRIG", "DCF", "FREQ1", "FREQ2", "FREQ3", "FREQ4"]
-            self.available_output_signals = ["None", "10Mhz", "PHC", "MAC", "GNSS1", "GNSS2", "IRIG", "DCF", "GEN1", "GEN2", "GEN3", "GEN4", "GND", "VCC"]
+            # Используем стандартные сигналы согласно документации ядра Linux
+            self.logger.info("Using standard SMA signals from kernel documentation")
             return
             
         try:
-            # Получаем доступные сигналы от устройства
-            self.available_input_signals = self.device.get_available_sma_inputs()
-            self.available_output_signals = self.device.get_available_sma_outputs()
+            # Попытка получить доступные сигналы от устройства
+            device_inputs = self.device.get_available_sma_inputs()
+            device_outputs = self.device.get_available_sma_outputs()
             
-            # Добавляем "None" если его нет в списке
-            if "None" not in self.available_input_signals:
-                self.available_input_signals.insert(0, "None")
-            if "None" not in self.available_output_signals:
-                self.available_output_signals.insert(0, "None")
+            # Если устройство предоставляет список сигналов, используем его
+            if device_inputs:
+                self.available_input_signals = device_inputs
+                # Обеспечиваем наличие "None" в начале списка для отключения портов
+                if "None" not in self.available_input_signals:
+                    self.available_input_signals.insert(0, "None")
+                    
+            if device_outputs:
+                self.available_output_signals = device_outputs
                 
             self.logger.info(f"Loaded available SMA inputs: {self.available_input_signals}")
             self.logger.info(f"Loaded available SMA outputs: {self.available_output_signals}")
             
         except Exception as e:
-            self.logger.error(f"Error loading available SMA signals: {e}")
-            # Используем fallback сигналы при ошибке (полный набор из ptp_ocp.c)
-            self.available_input_signals = ["None", "10Mhz", "PPS1", "PPS2", "TS1", "TS2", "TS3", "TS4", "IRIG", "DCF", "FREQ1", "FREQ2", "FREQ3", "FREQ4"]
-            self.available_output_signals = ["None", "10Mhz", "PHC", "MAC", "GNSS1", "GNSS2", "IRIG", "DCF", "GEN1", "GEN2", "GEN3", "GEN4", "GND", "VCC"]
+            self.logger.warning(f"Error loading device SMA signals, using defaults: {e}")
+            # Используем стандартные сигналы при ошибке
         
     def _create_widgets(self):
         """Создание виджетов панели SMA"""
@@ -108,6 +139,7 @@ class SMAPanel:
                 state="readonly",
                 width=15
             )
+            combo.bind("<<ComboboxSelected>>", lambda e, p=port: self._on_input_changed(p))
             self.input_combos[port] = combo
         
         # Выходные порты
@@ -129,6 +161,7 @@ class SMAPanel:
                 state="readonly",
                 width=15
             )
+            combo.bind("<<ComboboxSelected>>", lambda e, p=port: self._on_output_changed(p))
             self.output_combos[port] = combo
         
         # Кнопки управления
@@ -159,7 +192,7 @@ class SMAPanel:
         self.preset_combo = ttk.Combobox(
             self.presets_frame,
             textvariable=self.preset_var,
-            values=["Standard", "GNSS Only", "External Clock", "IRIG-B", "Custom"],
+            values=["Standard", "GNSS Only", "External Clock", "IRIG-B", "DCF", "Custom"],
             state="readonly"
         )
         
@@ -179,6 +212,62 @@ class SMAPanel:
             state=tk.DISABLED
         )
         
+    def _on_input_changed(self, port: str):
+        """Обработчик изменения входного сигнала"""
+        value = self.input_vars[port].get()
+        self.logger.info(f"Input {port} changed to: {value}")
+        self._update_signal_description(f"Input {port}", value, True)
+        
+    def _on_output_changed(self, port: str):
+        """Обработчик изменения выходного сигнала"""
+        value = self.output_vars[port].get()
+        self.logger.info(f"Output {port} changed to: {value}")
+        self._update_signal_description(f"Output {port}", value, False)
+        
+    def _update_signal_description(self, port: str, signal: str, is_input: bool):
+        """Обновление описания сигнала при выборе"""
+        descriptions = {
+            # Входные сигналы (destinations/sinks)
+            "None": "Signal input is disabled",
+            "10Mhz": "Signal is used as the 10MHz reference clock",
+            "PPS1": "Signal is sent to the PPS1 selector",
+            "PPS2": "Signal is sent to the PPS2 selector", 
+            "TS1": "Signal is sent to timestamper 1",
+            "TS2": "Signal is sent to timestamper 2",
+            "TS3": "Signal is sent to timestamper 3",
+            "TS4": "Signal is sent to timestamper 4",
+            "IRIG": "Signal is sent to the IRIG-B module" if is_input else "Output is from the PHC, in IRIG-B format",
+            "DCF": "Signal is sent to the DCF module" if is_input else "Output is from the PHC, in DCF format",
+            "FREQ1": "Signal is sent to frequency counter 1",
+            "FREQ2": "Signal is sent to frequency counter 2",
+            "FREQ3": "Signal is sent to frequency counter 3",
+            "FREQ4": "Signal is sent to frequency counter 4",
+            # Выходные сигналы (sources)
+            "PHC": "Output PPS is from the PHC clock",
+            "MAC": "Output PPS is from the Miniature Atomic Clock",
+            "GNSS1": "Output PPS is from the first GNSS module",
+            "GNSS2": "Output PPS is from the second GNSS module",
+            "GEN1": "Output is from frequency generator 1",
+            "GEN2": "Output is from frequency generator 2", 
+            "GEN3": "Output is from frequency generator 3",
+            "GEN4": "Output is from frequency generator 4",
+            "GND": "Output is GND",
+            "VCC": "Output is VCC"
+        }
+        
+        # Для входных сигналов 10Mhz используется в качестве выхода
+        if signal == "10Mhz" and not is_input:
+            descriptions["10Mhz"] = "Output is from the 10MHz reference clock"
+        
+        description = descriptions.get(signal, "Unknown signal")
+        
+        # Показать уведомление с описанием
+        if signal != "None":
+            messagebox.showinfo(
+                "Signal Description", 
+                f"{port}: {signal}\n\n{description}"
+            )
+    
     def _layout_widgets(self):
         """Размещение виджетов"""
         self.title_label.pack(pady=(0, 10))
@@ -472,6 +561,10 @@ class SMAPanel:
             "IRIG-B": {
                 'inputs': {'sma1': 'IRIG', 'sma2': 'None', 'sma3': 'None', 'sma4': 'None'},
                 'outputs': {'sma1_out': '10Mhz', 'sma2_out': 'IRIG', 'sma3_out': 'None', 'sma4_out': 'None'}
+            },
+            "DCF": {
+                'inputs': {'sma1': 'DCF', 'sma2': 'None', 'sma3': 'None', 'sma4': 'None'},
+                'outputs': {'sma1_out': '10Mhz', 'sma2_out': 'DCF', 'sma3_out': 'None', 'sma4_out': 'None'}
             }
         }
         
@@ -496,33 +589,39 @@ class SMAPanel:
     def _update_info_display(self):
         """Обновление информационного дисплея"""
         info_lines = [
-            "=== SMA Signal Descriptions ===",
+            "=== SMA Signal Descriptions (Linux Kernel Documentation) ===",
             "",
-            "INPUT SIGNALS:",
-            "• None - Порт отключен",
-            "• 10Mhz - Внешний опорный сигнал 10 МГц",
-            "• PPS1/PPS2 - Внешние импульсы секунды",
-            "• TS1-TS4 - Внешние временные метки",
-            "• IRIG - IRIG-B временной код",
-            "• DCF - DCF77 временной код",
-            "• FREQ1-FREQ4 - Частотные входы",
+            "INPUT SIGNALS (Destinations/Sinks):",
+            "• None - Signal input is disabled",
+            "• 10Mhz - Signal is used as the 10MHz reference clock",
+            "• PPS1/PPS2 - Signal is sent to the PPS1/PPS2 selector",
+            "• TS1-TS4 - Signal is sent to timestamper 1-4",
+            "• IRIG - Signal is sent to the IRIG-B module",
+            "• DCF - Signal is sent to the DCF module",
+            "• FREQ1-FREQ4 - Signal is sent to frequency counter 1-4",
             "",
-            "OUTPUT SIGNALS:",
-            "• None - Порт отключен",
-            "• 10Mhz - Опорная частота 10 МГц",
-            "• PHC - PTP Hardware Clock выход",
-            "• MAC - MAC часы",
-            "• GNSS1/GNSS2 - GNSS приемник",
-            "• IRIG - IRIG-B временной код",
-            "• DCF - DCF77 временной код",
-            "• GEN1-GEN4 - Программируемые генераторы",
-            "• GND - Земля",
-            "• VCC - Питание",
+            "OUTPUT SIGNALS (Sources):",
+            "• 10Mhz - Output is from the 10MHz reference clock",
+            "• PHC - Output PPS is from the PHC clock",
+            "• MAC - Output PPS is from the Miniature Atomic Clock",
+            "• GNSS1/GNSS2 - Output PPS is from the first/second GNSS module",
+            "• IRIG - Output is from the PHC, in IRIG-B format",
+            "• DCF - Output is from the PHC, in DCF format",
+            "• GEN1-GEN4 - Output is from frequency generator 1-4",
+            "• GND - Output is GND",
+            "• VCC - Output is VCC",
+            "",
+            "CLOCK SOURCES (/sys/class/timecard/ocpN/available_clock_sources):",
+            "• NONE - No adjustments",
+            "• PPS - Adjustments come from the PPS1 selector (default)",
+            "• TOD - Adjustments from the GNSS/TOD module",
+            "• IRIG - Adjustments from external IRIG-B signal",
+            "• DCF - Adjustments from external DCF signal",
             "",
             "ПРИМЕЧАНИЯ:",
+            "• Сигналы соответствуют Linux kernel documentation",
+            "• Выбор из выпадающего списка применяется сразу",
             "• Конфигурация сохраняется в устройстве",
-            "• Изменения применяются немедленно",
-            "• Некорректные сигналы могут вызвать ошибки",
             "• Используйте 'Refresh' для обновления статуса"
         ]
         
