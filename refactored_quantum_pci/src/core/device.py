@@ -65,60 +65,55 @@ class QuantumPCIDevice:
         found_device_path = None
         
         try:
-            # Ограничиваем время поиска
-            with timeout(15):
-                # Автоматический поиск в /sys/class/timecard/
-                timecard_path = Path("/sys/class/timecard")
+            # Автоматический поиск в /sys/class/timecard/ без signal-based timeout
+            timecard_path = Path("/sys/class/timecard")
+            
+            if timecard_path.exists() and timecard_path.is_dir():
+                self.logger.info(f"Checking timecard directory: {timecard_path}")
                 
-                if timecard_path.exists() and timecard_path.is_dir():
-                    self.logger.info(f"Checking timecard directory: {timecard_path}")
+                try:
+                    # Получаем список директорий
+                    device_dirs = [d for d in timecard_path.iterdir() 
+                                 if d.is_dir() and d.name.startswith("ocp")]
                     
-                    try:
-                        # Получаем список директорий с timeout
-                        device_dirs = [d for d in timecard_path.iterdir() 
-                                     if d.is_dir() and d.name.startswith("ocp")]
+                    for device_dir in device_dirs:
+                        self.logger.info(f"Checking device: {device_dir}")
                         
-                        for device_dir in device_dirs:
-                            self.logger.info(f"Checking device: {device_dir}")
+                        # Проверяем основные файлы устройства
+                        essential_files = ["serialnum", "available_clock_sources"]
+                        files_exist = []
+                        
+                        for file_name in essential_files:
+                            file_path = device_dir / file_name
+                            try:
+                                # Убираем timeout для простых операций файловой системы
+                                exists = file_path.exists() and file_path.is_file()
+                                files_exist.append(exists)
+                                if exists:
+                                    # Проверяем возможность чтения
+                                    file_path.read_text()
+                                            
+                            except (PermissionError, OSError) as e:
+                                self.logger.warning(f"Cannot access {file_path}: {e}")
+                                files_exist.append(False)
+                        
+                        # Если все основные файлы доступны
+                        if all(files_exist):
+                            found_device_path = device_dir
+                            device_found = True
+                            self.logger.info(f"Device found and verified: {device_dir}")
+                            break
+                        else:
+                            self.logger.warning(f"Device {device_dir} failed verification")
                             
-                            # Проверяем основные файлы устройства
-                            essential_files = ["serialnum", "available_clock_sources"]
-                            files_exist = []
-                            
-                            for file_name in essential_files:
-                                file_path = device_dir / file_name
-                                try:
-                                    with timeout(2):  # 2 секунды на файл
-                                        exists = file_path.exists() and file_path.is_file()
-                                        files_exist.append(exists)
-                                        if exists:
-                                            # Проверяем возможность чтения
-                                            with timeout(2):
-                                                file_path.read_text()
-                                                
-                                except (TimeoutError, PermissionError, OSError) as e:
-                                    self.logger.warning(f"Cannot access {file_path}: {e}")
-                                    files_exist.append(False)
-                            
-                            # Если все основные файлы доступны
-                            if all(files_exist):
-                                found_device_path = device_dir
-                                device_found = True
-                                self.logger.info(f"Device found and verified: {device_dir}")
-                                break
-                            else:
-                                self.logger.warning(f"Device {device_dir} failed verification")
-                                
-                    except PermissionError as e:
-                        self.logger.error(f"Permission denied accessing timecard directory: {e}")
-                    except OSError as e:
-                        self.logger.error(f"OS error accessing timecard directory: {e}")
-                else:
-                    self.logger.warning("Timecard directory not found or not accessible")
+                except PermissionError as e:
+                    self.logger.error(f"Permission denied accessing timecard directory: {e}")
+                except OSError as e:
+                    self.logger.error(f"OS error accessing timecard directory: {e}")
+            else:
+                self.logger.warning("Timecard directory not found or not accessible")
                     
-        except TimeoutError:
-            self.logger.error("Device detection timed out (15 seconds)")
-            device_found = False
+
             
         except Exception as e:
             self.logger.error(f"Unexpected error during device detection: {e}")
@@ -155,14 +150,11 @@ class QuantumPCIDevice:
         try:
             file_path = self.device_path / file_name
             if file_path.exists() and file_path.is_file():
-                with timeout(3):  # 3 секунды timeout на чтение
-                    with open(file_path, 'r') as f:
-                        content = f.read().strip()
-                        self.logger.debug(f"Read from {file_name}: {content}")
-                        return content
-        except TimeoutError:
-            self.logger.error(f"Timeout reading {file_name}")
-            return None
+                # Убираем signal-based timeout для потокобезопасности
+                with open(file_path, 'r') as f:
+                    content = f.read().strip()
+                    self.logger.debug(f"Read from {file_name}: {content}")
+                    return content
         except (OSError, IOError) as e:
             self.logger.error(f"Error reading {file_name}: {e}")
             return None
@@ -386,4 +378,24 @@ class QuantumPCIDevice:
             
         except Exception as e:
             self.logger.error(f"Health check failed: {e}")
+            return False
+
+    def is_connected(self) -> bool:
+        """
+        Проверка подключения устройства
+        
+        Returns:
+            True если устройство подключено и доступно
+        """
+        try:
+            # Проверяем существование пути устройства
+            if not self.device_path.exists():
+                return False
+            
+            # Проверяем доступность базовых файлов устройства
+            serial = self.read_device_file("serialnum")
+            return serial is not None and len(serial.strip()) > 0
+            
+        except Exception as e:
+            self.logger.debug(f"Connection check failed: {e}")
             return False

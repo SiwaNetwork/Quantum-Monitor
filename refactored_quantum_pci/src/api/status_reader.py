@@ -34,6 +34,27 @@ def timeout(duration):
         signal.signal(signal.SIGALRM, old_handler)
 
 
+@contextmanager
+def thread_safe_timeout(duration):
+    """Потокобезопасный контекстный менеджер для операций с timeout"""
+    start_time = time.time()
+    
+    class TimeoutChecker:
+        def __init__(self, timeout_duration):
+            self.timeout_duration = timeout_duration
+            self.start_time = time.time()
+        
+        def check(self):
+            if time.time() - self.start_time > self.timeout_duration:
+                raise TimeoutError(f"Operation timed out after {self.timeout_duration} seconds")
+    
+    checker = TimeoutChecker(duration)
+    try:
+        yield checker
+    finally:
+        pass
+
+
 def safe_run_command(command, timeout_sec=30, show_error=True):
     """Безопасная версия run_command с timeout"""
     try:
@@ -260,8 +281,13 @@ class StatusReader:
                 
                 # Получение статуса с timeout
                 try:
-                    with timeout(10):  # 10 секунд timeout
-                        current_status = self.get_full_status()
+                    # Используем простой timeout без сигналов для потокобезопасности
+                    start_time = time.time()
+                    current_status = self.get_full_status()
+                    elapsed = time.time() - start_time
+                    
+                    if elapsed > 10:  # Если операция заняла больше 10 секунд
+                        self.logger.warning(f"Status read took {elapsed:.2f} seconds")
                     
                     # Вызов callback для полного статуса
                     if "on_status_update" in self._callbacks:
