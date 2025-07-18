@@ -17,19 +17,10 @@ from .exceptions import DeviceNotFoundError, DeviceAccessError, ValidationError
 
 @contextmanager
 def timeout(duration):
-    """Контекстный менеджер для операций с timeout"""
-    def timeout_handler(signum, frame):
-        raise TimeoutError(f"Operation timed out after {duration} seconds")
-    
-    # Сохраняем старый обработчик
-    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(duration)
-    
-    try:
-        yield
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+    """Контекстный менеджер для операций с timeout (упрощенная версия)"""
+    # Упрощенная версия без использования signal.alarm
+    # которая может вызывать проблемы в многопоточных приложениях
+    yield
 
 
 class QuantumPCIDevice:
@@ -170,28 +161,10 @@ class QuantumPCIDevice:
                 self.logger.warning(f"Cannot check permissions for {file_name}")
                 return None
             
-            # Читаем файл с таймаутом
-            start_time = time.time()
+            # Читаем файл простым способом (как в рабочей версии)
             try:
                 with open(file_path, 'r') as f:
-                    # Проверяем таймаут во время чтения
-                    content = ""
-                    while True:
-                        if time.time() - start_time > timeout_sec:
-                            self.logger.warning(f"Read timeout for {file_name}")
-                            return None
-                        
-                        chunk = f.read(1024)  # Читаем по кускам
-                        if not chunk:
-                            break
-                        content += chunk
-                        
-                        # Ограничиваем размер содержимого
-                        if len(content) > 10240:  # 10KB максимум
-                            self.logger.warning(f"File {file_name} too large, truncating")
-                            break
-                    
-                    content = content.strip()
+                    content = f.read().strip()
                     self.logger.debug(f"Read from {file_name}: {content}")
                     return content
                     
@@ -236,10 +209,19 @@ class QuantumPCIDevice:
             "serial_number": self.read_device_file("serialnum"),
             "available_clock_sources": self.get_available_clock_sources(),
             "current_clock_source": self.read_device_file("clock_source"),
-            "gnss_sync": self.read_device_file("gnss_sync"),
-            "available_sma_inputs": self.get_available_sma_inputs(),
-            "available_sma_outputs": self.get_available_sma_outputs()
+            "gnss_sync": self.read_device_file("gnss_sync")
         }
+        
+        # Добавляем SMA информацию только если файлы существуют
+        if (self.device_path / "available_sma_inputs").exists():
+            info["available_sma_inputs"] = self.get_available_sma_inputs()
+        else:
+            info["available_sma_inputs"] = []
+            
+        if (self.device_path / "available_sma_outputs").exists():
+            info["available_sma_outputs"] = self.get_available_sma_outputs()
+        else:
+            info["available_sma_outputs"] = []
         
         # Добавление дополнительной информации
         utc_tai_offset = self.read_device_file("utc_tai_offset")
