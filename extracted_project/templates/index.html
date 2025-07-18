@@ -420,7 +420,14 @@
             }
             
             const syncClass = data.synchronized ? 'success' : 'error';
-            const syncText = data.synchronized ? 'SYNCHRONIZED' : 'NOT SYNCHRONIZED';
+            let syncText;
+            if (data.synchronized) {
+                syncText = 'SYNCHRONIZED';
+            } else if (data.sync && data.sync.toUpperCase().startsWith('LOST')) {
+                syncText = 'LOST';
+            } else {
+                syncText = 'NOT SYNCHRONIZED';
+            }
             
             element.innerHTML = `
                 ${createStatusItem('Synchronization', syncText, syncClass)}

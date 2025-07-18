@@ -169,7 +169,8 @@ class StatusReader:
             
             # Проверка синхронизации
             gnss_sync = self.device.read_device_file("gnss_sync")
-            checks["gnss_synchronized"] = gnss_sync == "1" if gnss_sync else False
+            # Правильная проверка: SYNC означает синхронизацию, LOST означает потерю сигнала
+            checks["gnss_synchronized"] = gnss_sync and gnss_sync.strip().upper() == "SYNC"
             
             # Проверка источника синхронизации
             clock_source = self.device.get_current_clock_source()
