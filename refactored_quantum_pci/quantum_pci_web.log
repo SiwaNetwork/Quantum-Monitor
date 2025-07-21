@@ -11,3 +11,29 @@
 2025-07-21 14:50:02,910 - __main__ - INFO - Starting web server at http://0.0.0.0:8001
 2025-07-21 14:50:02,910 - __main__ - INFO - Press Ctrl+C to stop the server
 2025-07-21 14:50:12,848 - __main__ - INFO - Web server stopped
+2025-07-21 15:13:34,895 - __main__ - INFO - Starting QUANTUM-PCI Web Interface v2.0
+2025-07-21 15:13:34,895 - __main__ - INFO - Device: auto-detect
+2025-07-21 15:13:34,895 - __main__ - INFO - Host: 0.0.0.0
+2025-07-21 15:13:34,895 - __main__ - INFO - Port: 8000
+2025-07-21 15:13:34,895 - __main__ - INFO - Debug mode: False
+2025-07-21 15:13:34,895 - src.core.device - INFO - Starting safe device detection...
+2025-07-21 15:13:34,896 - src.core.device - WARNING - Timecard directory not found or not accessible
+2025-07-21 15:13:34,896 - src.api.web_api - ERROR - Failed to initialize device: No QUANTUM-PCI device found
+2025-07-21 15:13:34,898 - __main__ - WARNING - QUANTUM-PCI device not found or not accessible
+2025-07-21 15:13:34,898 - __main__ - WARNING - Web interface will run in limited mode
+2025-07-21 15:13:34,898 - __main__ - INFO - Starting web server at http://0.0.0.0:8000
+2025-07-21 15:13:34,898 - __main__ - INFO - Press Ctrl+C to stop the server
+2025-07-21 15:13:44,733 - __main__ - INFO - Web server stopped
+2025-07-21 15:13:50,786 - __main__ - INFO - Starting QUANTUM-PCI Web Interface v2.0
+2025-07-21 15:13:50,786 - __main__ - INFO - Device: auto-detect
+2025-07-21 15:13:50,786 - __main__ - INFO - Host: 0.0.0.0
+2025-07-21 15:13:50,786 - __main__ - INFO - Port: 8000
+2025-07-21 15:13:50,786 - __main__ - INFO - Debug mode: False
+2025-07-21 15:13:50,787 - src.core.device - INFO - Starting safe device detection...
+2025-07-21 15:13:50,787 - src.core.device - WARNING - Timecard directory not found or not accessible
+2025-07-21 15:13:50,787 - src.api.web_api - ERROR - Failed to initialize device: No QUANTUM-PCI device found
+2025-07-21 15:13:50,789 - __main__ - WARNING - QUANTUM-PCI device not found or not accessible
+2025-07-21 15:13:50,789 - __main__ - WARNING - Web interface will run in limited mode
+2025-07-21 15:13:50,789 - __main__ - INFO - Starting web server at http://0.0.0.0:8000
+2025-07-21 15:13:50,789 - __main__ - INFO - Press Ctrl+C to stop the server
+2025-07-21 15:14:14,457 - __main__ - INFO - Web server stopped
