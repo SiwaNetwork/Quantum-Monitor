@@ -899,23 +899,27 @@ class QuantumPCIConfigurator:
                 if self.device_path and self.device_path.exists():
                     timestamp = time.strftime("%H:%M:%S")
                     
-                    # Обновление параметров с timeout
+                    # Обновление параметров БЕЗ timeout для быстрых операций файловой системы
                     for param_name, file_name in [
                         ("Clock source", "clock_source"),
                         ("GNSS sync", "gnss_sync"),
                         ("Serial number", "serialnum")
                     ]:
                         try:
-                            with timeout(3):  # 3 секунды на операцию
-                                param_file = self.device_path / file_name
-                                if param_file.exists():
+                            param_file = self.device_path / file_name
+                            if param_file.exists() and param_file.is_file():
+                                # Быстрая проверка доступности без timeout
+                                try:
                                     value = param_file.read_text().strip()
                                     if hasattr(self, 'log_status'):
                                         self.log_status(f"[{timestamp}] {param_name}: {value}")
+                                except (OSError, PermissionError, UnicodeDecodeError) as e:
+                                    if hasattr(self, 'log_status'):
+                                        self.log_status(f"[{timestamp}] {param_name}: READ ERROR - {e}")
+                            else:
+                                if hasattr(self, 'log_status'):
+                                    self.log_status(f"[{timestamp}] {param_name}: FILE NOT FOUND")
                                         
-                        except TimeoutError:
-                            if hasattr(self, 'log_status'):
-                                self.log_status(f"[{timestamp}] {param_name}: TIMEOUT")
                         except Exception as e:
                             if hasattr(self, 'log_status'):
                                 self.log_status(f"[{timestamp}] {param_name}: ERROR - {e}")
