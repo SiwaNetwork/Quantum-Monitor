@@ -1,0 +1,4 @@
+2025-07-21 09:25:31,733 - INFO - Monitoring PTP OCP device: /sys/bus/pci/devices/0000:01:00.0
+2025-07-21 09:25:31,734 - WARNING - Not running as root. Function tracing will be limited.
+2025-07-21 09:25:31,734 - INFO - Monitoring started. Press Ctrl+C to stop.
+2025-07-21 09:25:31,734 - WARNING - No sysfs attributes found. Device may not be properly configured.

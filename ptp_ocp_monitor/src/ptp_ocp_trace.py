@@ -80,60 +80,39 @@ class PTPOCPTracer:
     """Trace PTP OCP driver functions using eBPF"""
     
     def __init__(self, duration_filter=0):
-        self.duration_filter = duration_filter
-        self.bpf_programs = {}
+        self.duration_filter = duration_filter * 1000  # Convert to nanoseconds
         self.running = True
+        self.bpf_programs = [{}]
         
-        # Functions to trace
+        # Core functions that are most likely to be available
         self.trace_functions = [
-            # Core PTP functions
-            'ptp_ocp_gettimex',
-            'ptp_ocp_settime',
-            'ptp_ocp_adjtime',
             'ptp_ocp_adjfine',
+            'ptp_ocp_adjtime', 
+            'ptp_ocp_gettime64',
+            'ptp_ocp_settime64',
             'ptp_ocp_enable',
-            
-            # Timestamp functions
-            'ptp_ocp_ts_enable',
-            'ptp_ocp_ts_irq',
-            
-            # Signal functions
-            'ptp_ocp_signal_enable',
-            'ptp_ocp_signal_from_perout',
-            
-            # SMA functions
-            'ptp_ocp_sma_store',
-            'ptp_ocp_sma_show',
-            
-            # Device management
-            'ptp_ocp_probe',
-            'ptp_ocp_remove',
-            'ptp_ocp_watchdog',
-            
-            # EEPROM operations
-            'ptp_ocp_read_eeprom',
-            
-            # Registration functions
-            'ptp_ocp_register_ext',
-            'ptp_ocp_register_mem',
-            'ptp_ocp_register_i2c',
-            'ptp_ocp_register_spi',
-            'ptp_ocp_register_serial',
-            
-            # TOD functions
-            'ptp_ocp_tod_init',
-            'ptp_ocp_tod_info',
-            
-            # Board specific
-            'ptp_ocp_fb_board_init',
-            'ptp_ocp_art_board_init',
-            
-            # Utility functions
-            'ptp_ocp_adjtime_coarse',
-            'ptp_ocp_enable_fpga',
-            'ptp_ocp_init_clock'
+            'ptp_ocp_adjtime_coarse'
         ]
         
+    def check_function_availability(self):
+        """Check which functions are available in kallsyms"""
+        available_functions = []
+        try:
+            with open('/proc/kallsyms', 'r') as f:
+                kallsyms = f.read()
+                for func in self.trace_functions:
+                    if func in kallsyms:
+                        available_functions.append(func)
+                        print(f"✓ Function {func} is available")
+                    else:
+                        print(f"✗ Function {func} is not available")
+        except Exception as e:
+            print(f"Warning: Could not read /proc/kallsyms: {e}")
+            # Fallback to original list
+            available_functions = self.trace_functions
+            
+        return available_functions
+
     def create_bpf_program(self, func_name):
         """Create BPF program for a specific function"""
         # Replace placeholder with actual function name
@@ -170,11 +149,26 @@ class PTPOCPTracer:
     def start_tracing(self):
         """Start tracing PTP OCP functions"""
         print("Starting PTP OCP function tracing...")
+        
+        # Check which functions are available
+        available_functions = self.check_function_availability()
+        
+        if not available_functions:
+            print("Error: No PTP OCP functions are available for tracing.")
+            print("This might be because:")
+            print("  1. The ptp_ocp driver is not loaded")
+            print("  2. The functions are inlined by the compiler")
+            print("  3. You don't have sufficient permissions")
+            return
+            
+        print(f"Found {len(available_functions)} available functions")
         print("Press Ctrl+C to stop\n")
         
-        # Create BPF programs for each function
+        # Create BPF programs for available functions only
         active_bpf = None
-        for func in self.trace_functions:
+        successful_attachments = 0
+        
+        for func in available_functions:
             b = self.create_bpf_program(func)
             if b:
                 if not active_bpf:
@@ -182,12 +176,14 @@ class PTPOCPTracer:
                     # Set up perf buffer callback
                     b["events"].open_perf_buffer(self.print_event)
                     self.bpf_programs[0] = b
+                successful_attachments += 1
                     
-        if not active_bpf:
-            print("Error: No functions could be traced.")
+        if not active_bpf or successful_attachments == 0:
+            print("Error: No functions could be traced successfully.")
+            print("The functions might be inlined or not currently loaded.")
             return
             
-        print(f"Tracing {len(self.trace_functions)} functions...")
+        print(f"Successfully attached to {successful_attachments} functions...")
         print("Function                         Duration (μs)")
         print("-" * 60)
         
@@ -240,7 +236,7 @@ def main():
     check_requirements()
     
     # Create tracer
-    tracer = PTPOCPTracer(duration_filter=args.duration * 1000)  # Convert to nanoseconds
+    tracer = PTPOCPTracer(duration_filter=args.duration)  # Convert to nanoseconds
     
     # Override function list if specific functions are requested
     if args.function:
