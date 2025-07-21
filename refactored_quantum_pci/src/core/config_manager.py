@@ -258,16 +258,16 @@ class ConfigManager:
             },
             "sma_settings": {
                 "inputs": {
-                    "sma1": "PPS1",
-                    "sma2": "None",
+                    "sma1": "10Mhz",
+                    "sma2": "PPS1",
                     "sma3": "None",
                     "sma4": "None"
                 },
                 "outputs": {
-                    "sma1": "PHC",
-                    "sma2": "GND",
-                    "sma3": "GND",
-                    "sma4": "GND"
+                    "sma1": "None",
+                    "sma2": "None", 
+                    "sma3": "10Mhz",
+                    "sma4": "PHC"
                 }
             },
 

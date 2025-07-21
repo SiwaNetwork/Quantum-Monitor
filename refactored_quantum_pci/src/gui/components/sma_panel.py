@@ -314,6 +314,23 @@ class SMAPanel:
         # Заполнение информационной области
         self._update_info_display()
     
+    def _get_default_sma_configuration(self):
+        """Получение конфигурации SMA по умолчанию"""
+        return {
+            'inputs': {
+                'sma1': '10Mhz',    # SMA1 вход: 10MHz опорная частота
+                'sma2': 'PPS1',     # SMA2 вход: PPS1 сигнал
+                'sma3': 'None',     # SMA3 вход: не используется
+                'sma4': 'None'      # SMA4 вход: не используется
+            },
+            'outputs': {
+                'sma1_out': 'None',   # SMA1 выход: не используется
+                'sma2_out': 'None',   # SMA2 выход: не используется
+                'sma3_out': '10Mhz',  # SMA3 выход: 10MHz опорная частота
+                'sma4_out': 'PHC'     # SMA4 выход: PHC clock
+            }
+        }
+    
     def _load_sma_configuration(self):
         """Загрузка текущей конфигурации SMA"""
         if not self.device:
@@ -323,36 +340,43 @@ class SMAPanel:
         try:
             sma_config = self.device.get_sma_configuration()
             
+            # Получаем конфигурацию по умолчанию
+            defaults = self._get_default_sma_configuration()
+            default_inputs = defaults['inputs']
+            default_outputs = defaults['outputs']
+            
             # Обновление входов
             inputs = sma_config.get('inputs', {})
             for port in self.input_ports:
-                if port in inputs:
-                    value = inputs[port]
+                if port in inputs and inputs[port] and inputs[port].strip():
+                    value = inputs[port].strip()
                     # Проверяем что значение доступно в комбобоксе
                     if value in self.available_input_signals:
                         self.input_vars[port].set(value)
                     else:
-                        self.input_vars[port].set("None")
+                        # Используем значение по умолчанию если текущее недоступно
+                        self.input_vars[port].set(default_inputs.get(port, "None"))
                 else:
-                    self.input_vars[port].set("None")
+                    # Используем значение по умолчанию если порт не настроен
+                    self.input_vars[port].set(default_inputs.get(port, "None"))
             
             # Обновление выходов  
             outputs = sma_config.get('outputs', {})
             for port in self.output_ports:
                 # Ключ в конфигурации может быть без "_out" суффикса
                 port_key = port.replace("_out", "")
-                if port in outputs:
-                    value = outputs[port]
-                elif port_key in outputs:
-                    value = outputs[port_key]
-                else:
-                    value = "None"
-                    
-                # Проверяем что значение доступно в комбобоксе
-                if value in self.available_output_signals:
+                value = None
+                
+                if port in outputs and outputs[port] and outputs[port].strip():
+                    value = outputs[port].strip()
+                elif port_key in outputs and outputs[port_key] and outputs[port_key].strip():
+                    value = outputs[port_key].strip()
+                
+                if value and value in self.available_output_signals:
                     self.output_vars[port].set(value)
                 else:
-                    self.output_vars[port].set("None")
+                    # Используем значение по умолчанию если порт не настроен или недоступен
+                    self.output_vars[port].set(default_outputs.get(port, "None"))
             
             # Обновление отображения текущей конфигурации
             self._update_current_config_display(sma_config)
@@ -404,14 +428,34 @@ class SMAPanel:
     
     def _show_no_device(self):
         """Отображение отсутствия устройства"""
-        for var in self.input_vars.values():
-            var.set("N/A")
-        for var in self.output_vars.values():
-            var.set("N/A")
+        # Показываем ожидаемую конфигурацию по умолчанию даже без устройства
+        defaults = self._get_default_sma_configuration()
+        default_inputs = defaults['inputs']
+        default_outputs = defaults['outputs']
+        
+        # Устанавливаем значения по умолчанию
+        for port in self.input_ports:
+            self.input_vars[port].set(default_inputs.get(port, "None"))
+        for port in self.output_ports:
+            self.output_vars[port].set(default_outputs.get(port, "None"))
             
         self.current_text.config(state=tk.NORMAL)
         self.current_text.delete(1.0, tk.END)
-        self.current_text.insert(1.0, "No QUANTUM-PCI device connected.\nSMA configuration unavailable.")
+        self.current_text.insert(1.0, 
+            "No QUANTUM-PCI device connected.\n"
+            "Showing expected default SMA configuration:\n\n"
+            "=== Expected Default Configuration ===\n"
+            "Inputs:\n"
+            "  sma1: IN: 10Mhz\n"
+            "  sma2: IN: PPS1\n"
+            "  sma3: \n"
+            "  sma4: \n\n"
+            "Outputs:\n"
+            "  sma1: \n"
+            "  sma2: \n"
+            "  sma3: OUT: 10Mhz\n"
+            "  sma4: OUT: PHC\n\n"
+            "Connect device to configure actual settings.")
         self.current_text.config(state=tk.DISABLED)
     
     def _show_error(self, error_msg: str):
@@ -493,21 +537,8 @@ class SMAPanel:
         
         if result:
             try:
-                # Настройки по умолчанию для ptp_ocp согласно документации
-                default_config = {
-                    'inputs': {
-                        'sma1': 'None',     # Обычно используется для внешнего опорного сигнала
-                        'sma2': 'None',     # Зарезервирован
-                        'sma3': 'None',     # Зарезервирован  
-                        'sma4': 'None'      # Зарезервирован
-                    },
-                    'outputs': {
-                        'sma1_out': '10Mhz',  # Обычно 10MHz опорная частота
-                        'sma2_out': 'PPS1',   # Pulse Per Second
-                        'sma3_out': 'None',   # Зарезервирован
-                        'sma4_out': 'None'    # Зарезервирован
-                    }
-                }
+                # Получаем настройки по умолчанию
+                default_config = self._get_default_sma_configuration()
                 
                 # Установка значений в GUI
                 for port, signal in default_config['inputs'].items():
@@ -533,11 +564,11 @@ class SMAPanel:
             messagebox.showwarning("Warning", "Please select a preset configuration")
             return
         
+        # Получаем конфигурацию по умолчанию для стандартного пресета
+        default_config = self._get_default_sma_configuration()
+        
         presets = {
-            "Standard": {
-                'inputs': {'sma1': 'None', 'sma2': 'None', 'sma3': 'None', 'sma4': 'None'},
-                'outputs': {'sma1_out': '10Mhz', 'sma2_out': 'PPS1', 'sma3_out': 'None', 'sma4_out': 'None'}
-            },
+            "Standard": default_config,
             "GNSS Only": {
                 'inputs': {'sma1': 'None', 'sma2': 'None', 'sma3': 'None', 'sma4': 'None'},
                 'outputs': {'sma1_out': 'GNSS1', 'sma2_out': 'PPS1', 'sma3_out': 'None', 'sma4_out': 'None'}
