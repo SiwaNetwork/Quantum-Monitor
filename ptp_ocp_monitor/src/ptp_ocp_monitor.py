@@ -20,7 +20,6 @@ class PTPOCPMonitor:
     """Monitor for PTP OCP driver functions and sysfs attributes"""
     
     def __init__(self, device_path=None, log_file=None):
-        self.device_path = device_path
         self.log_file = log_file or f"ptp_ocp_monitor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
         self.running = False
         self.data_queue = queue.Queue()
@@ -37,8 +36,11 @@ class PTPOCPMonitor:
         self.logger = logging.getLogger(__name__)
         
         # Find PTP OCP device if not specified
-        if not self.device_path:
+        if not device_path:
             self.device_path = self._find_ptp_ocp_device()
+        else:
+            # Convert string path to Path object
+            self.device_path = Path(device_path)
             
         if not self.device_path:
             raise ValueError("No PTP OCP device found. Please specify device path.")
@@ -106,32 +108,60 @@ class PTPOCPMonitor:
         
     def read_sysfs_attr(self, attr_name):
         """Read a sysfs attribute value"""
-        attr_path = self.device_path / attr_name
+        # Try to find the attribute in timecard subdirectory first
+        timecard_path = self.device_path / 'timecard'
+        if timecard_path.exists():
+            for device in timecard_path.iterdir():
+                if device.is_dir():
+                    attr_path = device / attr_name
+                    if attr_path.exists():
+                        try:
+                            with open(attr_path, 'r') as f:
+                                value = f.read().strip()
+                                return value
+                        except Exception as e:
+                            self.logger.debug(f"Error reading {attr_path}: {e}")
         
-        if not attr_path.exists():
-            return None
-            
-        try:
-            with open(attr_path, 'r') as f:
-                value = f.read().strip()
-                return value
-        except Exception as e:
-            self.logger.error(f"Error reading {attr_name}: {e}")
-            return None
+        # Fallback: try direct path
+        attr_path = self.device_path / attr_name
+        if attr_path.exists():
+            try:
+                with open(attr_path, 'r') as f:
+                    value = f.read().strip()
+                    return value
+            except Exception as e:
+                self.logger.debug(f"Error reading {attr_path}: {e}")
+        
+        # Not found in either location
+        return None
             
     def monitor_sysfs(self):
         """Monitor sysfs attributes"""
+        # First, check which attributes are actually available
+        available_attrs = []
+        for attr in self.sysfs_attrs:
+            if self.read_sysfs_attr(attr) is not None:
+                available_attrs.append(attr)
+        
+        if not available_attrs:
+            self.logger.warning("No sysfs attributes found. Device may not be properly configured.")
+            # Still continue but with minimal monitoring
+            available_attrs = ['uevent']  # uevent should always exist
+        else:
+            self.logger.info(f"Found {len(available_attrs)} available attributes: {', '.join(available_attrs)}")
+        
         while self.running:
             timestamp = datetime.now().isoformat()
             data = {'timestamp': timestamp, 'type': 'sysfs', 'attributes': {}}
             
-            for attr in self.sysfs_attrs:
+            for attr in available_attrs:
                 value = self.read_sysfs_attr(attr)
                 if value is not None:
                     data['attributes'][attr] = value
                     
-            self.data_queue.put(data)
-            self.logger.debug(f"Sysfs data: {json.dumps(data, indent=2)}")
+            if data['attributes']:  # Only add if we have some data
+                self.data_queue.put(data)
+                self.logger.debug(f"Sysfs data: {json.dumps(data, indent=2)}")
             
             time.sleep(1)  # Read every second
             
@@ -143,24 +173,47 @@ class PTPOCPMonitor:
                 self.logger.warning("Not running as root. Function tracing will be limited.")
                 return False
                 
+            # Check if debugfs is mounted
+            if not os.path.exists('/sys/kernel/debug/tracing'):
+                self.logger.warning("Tracing debugfs not available. Please mount debugfs:")
+                self.logger.warning("  sudo mount -t debugfs none /sys/kernel/debug")
+                return False
+                
+            # Check if tracing is available
+            if not os.path.exists('/sys/kernel/debug/tracing/current_tracer'):
+                self.logger.warning("Function tracing not available in this kernel.")
+                return False
+                
             # Enable function tracer
-            subprocess.run(['echo', 'function', '>', '/sys/kernel/debug/tracing/current_tracer'], 
-                         shell=True, check=True)
+            result = subprocess.run('echo function > /sys/kernel/debug/tracing/current_tracer', 
+                         shell=True, capture_output=True, text=True)
+            if result.returncode != 0:
+                self.logger.warning(f"Failed to enable function tracer: {result.stderr}")
+                return False
             
             # Clear existing filters
-            subprocess.run(['echo', '>', '/sys/kernel/debug/tracing/set_ftrace_filter'], 
-                         shell=True, check=True)
+            subprocess.run('echo > /sys/kernel/debug/tracing/set_ftrace_filter', 
+                         shell=True, check=False)  # Don't fail if this doesn't work
             
-            # Add our functions to filter
+            # Add our functions to filter (try each one individually)
+            successful_filters = 0
             for func in self.trace_functions:
                 cmd = f'echo {func} >> /sys/kernel/debug/tracing/set_ftrace_filter'
-                subprocess.run(cmd, shell=True, check=True)
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                if result.returncode == 0:
+                    successful_filters += 1
+                else:
+                    self.logger.debug(f"Failed to add filter for {func}: {result.stderr}")
+                    
+            if successful_filters == 0:
+                self.logger.warning("No function filters could be added. Functions may not be available.")
+                return False
                 
             # Enable tracing
-            subprocess.run(['echo', '1', '>', '/sys/kernel/debug/tracing/tracing_on'], 
+            subprocess.run('echo 1 > /sys/kernel/debug/tracing/tracing_on', 
                          shell=True, check=True)
             
-            self.logger.info("Function tracing enabled")
+            self.logger.info(f"Function tracing enabled for {successful_filters}/{len(self.trace_functions)} functions")
             return True
             
         except Exception as e:
@@ -171,9 +224,9 @@ class PTPOCPMonitor:
         """Cleanup ftrace settings"""
         try:
             if os.geteuid() == 0:
-                subprocess.run(['echo', '0', '>', '/sys/kernel/debug/tracing/tracing_on'], 
+                subprocess.run('echo 0 > /sys/kernel/debug/tracing/tracing_on', 
                              shell=True, check=True)
-                subprocess.run(['echo', '>', '/sys/kernel/debug/tracing/set_ftrace_filter'], 
+                subprocess.run('echo > /sys/kernel/debug/tracing/set_ftrace_filter', 
                              shell=True, check=True)
                 self.logger.info("Function tracing disabled")
         except Exception as e:

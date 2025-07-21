@@ -1,0 +1,5 @@
+2025-07-21 09:25:42,400 - INFO - Monitoring PTP OCP device: /sys/bus/pci/devices/0000:01:00.0
+2025-07-21 09:25:42,401 - WARNING - No sysfs attributes found. Device may not be properly configured.
+2025-07-21 09:25:42,402 - WARNING - Tracing debugfs not available. Please mount debugfs:
+2025-07-21 09:25:42,402 - WARNING -   sudo mount -t debugfs none /sys/kernel/debug
+2025-07-21 09:25:42,402 - INFO - Monitoring started. Press Ctrl+C to stop.
