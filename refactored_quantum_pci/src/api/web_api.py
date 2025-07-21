@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 import uvicorn
+import jinja2
 
 from ..core.device import QuantumPCIDevice
 from ..core.exceptions import QuantumPCIError, DeviceNotFoundError
@@ -138,7 +139,19 @@ class QuantumPCIWebAPI:
         
         # Подключаем статические файлы и шаблоны
         self.app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-        self.templates = Jinja2Templates(directory=str(templates_dir))
+        
+        # Создаем Jinja2 environment с пользовательскими разделителями
+        # чтобы избежать конфликтов с Vue.js синтаксисом
+        jinja_env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(templates_dir)),
+            variable_start_string='[[',
+            variable_end_string=']]',
+            block_start_string='[%',
+            block_end_string='%]',
+            comment_start_string='[#',
+            comment_end_string='#]'
+        )
+        self.templates = Jinja2Templates(env=jinja_env)
     
     def _setup_routes(self):
         """Настройка маршрутов API"""
