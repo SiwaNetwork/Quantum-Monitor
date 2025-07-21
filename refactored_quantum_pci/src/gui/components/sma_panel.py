@@ -41,10 +41,7 @@ class SMAPanel:
             "TS4",      # signal is sent to timestamper 4
             "IRIG",     # signal is sent to the IRIG-B module
             "DCF",      # signal is sent to the DCF module
-            "FREQ1",    # signal is sent to frequency counter 1
-            "FREQ2",    # signal is sent to frequency counter 2
-            "FREQ3",    # signal is sent to frequency counter 3
-            "FREQ4"     # signal is sent to frequency counter 4
+
         ]
         
         self.available_output_signals = [
@@ -55,10 +52,7 @@ class SMAPanel:
             "GNSS2",    # output PPS is from the second GNSS module
             "IRIG",     # output is from the PHC, in IRIG-B format
             "DCF",      # output is from the PHC, in DCF format
-            "GEN1",     # output is from frequency generator 1
-            "GEN2",     # output is from frequency generator 2
-            "GEN3",     # output is from frequency generator 3
-            "GEN4",     # output is from frequency generator 4
+
             "GND",      # output is GND
             "VCC"       # output is VCC
         ]
@@ -238,19 +232,13 @@ class SMAPanel:
             "TS4": "Signal is sent to timestamper 4",
             "IRIG": "Signal is sent to the IRIG-B module" if is_input else "Output is from the PHC, in IRIG-B format",
             "DCF": "Signal is sent to the DCF module" if is_input else "Output is from the PHC, in DCF format",
-            "FREQ1": "Signal is sent to frequency counter 1",
-            "FREQ2": "Signal is sent to frequency counter 2",
-            "FREQ3": "Signal is sent to frequency counter 3",
-            "FREQ4": "Signal is sent to frequency counter 4",
+
             # Выходные сигналы (sources)
             "PHC": "Output PPS is from the PHC clock",
             "MAC": "Output PPS is from the Miniature Atomic Clock",
             "GNSS1": "Output PPS is from the first GNSS module",
             "GNSS2": "Output PPS is from the second GNSS module",
-            "GEN1": "Output is from frequency generator 1",
-            "GEN2": "Output is from frequency generator 2", 
-            "GEN3": "Output is from frequency generator 3",
-            "GEN4": "Output is from frequency generator 4",
+
             "GND": "Output is GND",
             "VCC": "Output is VCC"
         }
@@ -598,7 +586,7 @@ class SMAPanel:
             "• TS1-TS4 - Signal is sent to timestamper 1-4",
             "• IRIG - Signal is sent to the IRIG-B module",
             "• DCF - Signal is sent to the DCF module",
-            "• FREQ1-FREQ4 - Signal is sent to frequency counter 1-4",
+
             "",
             "OUTPUT SIGNALS (Sources):",
             "• 10Mhz - Output is from the 10MHz reference clock",
@@ -607,7 +595,7 @@ class SMAPanel:
             "• GNSS1/GNSS2 - Output PPS is from the first/second GNSS module",
             "• IRIG - Output is from the PHC, in IRIG-B format",
             "• DCF - Output is from the PHC, in DCF format",
-            "• GEN1-GEN4 - Output is from frequency generator 1-4",
+
             "• GND - Output is GND",
             "• VCC - Output is VCC",
             "",

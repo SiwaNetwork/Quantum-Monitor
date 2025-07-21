@@ -270,20 +270,5 @@ class ConfigManager:
                     "sma4": "GND"
                 }
             },
-            "generator_settings": {
-                "gen1": {
-                    "enabled": False,
-                    "period": 1000000,
-                    "duty": 500000,
-                    "phase": 0,
-                    "polarity": 1
-                },
-                "gen2": {
-                    "enabled": False,
-                    "period": 1000000,
-                    "duty": 500000,
-                    "phase": 0,
-                    "polarity": 1
-                }
-            }
+
         }

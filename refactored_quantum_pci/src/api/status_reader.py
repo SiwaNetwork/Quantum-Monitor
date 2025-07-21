@@ -110,14 +110,7 @@ class StatusReader:
             'tod_baud_rate', 'available_tod_baud_rates',
             'tod_correction'
         ],
-        # Генераторы сигналов (динамически проверяются)
-        'signal_generators': {
-            'signal': ['duty', 'period', 'phase', 'polarity', 'running', 'start', 'signal']
-        },
-        # Частотные счетчики (динамически проверяются)
-        'frequency_counters': {
-            'freq': ['frequency', 'seconds']
-        }
+
     }
     
     def __init__(self, device: Optional[QuantumPCIDevice] = None, logger: Optional[logging.Logger] = None):
@@ -161,8 +154,7 @@ class StatusReader:
             'basic': [],
             'sma': [],
             'tod': [],
-            'signal_generators': {},
-            'frequency_counters': {}
+
         }
         
         if not self.device or not self.device.device_path:
@@ -184,23 +176,7 @@ class StatusReader:
             if self._check_attribute_exists(attr):
                 available['tod'].append(attr)
         
-        # Сканирование генераторов сигналов
-        for i in range(1, 5):
-            gen_attrs = []
-            for attr in self.ALL_DEVICE_ATTRIBUTES['signal_generators']['signal']:
-                if self._check_attribute_exists(f"signal{i}_{attr}"):
-                    gen_attrs.append(attr)
-            if gen_attrs:
-                available['signal_generators'][f'signal{i}'] = gen_attrs
-        
-        # Сканирование частотных счетчиков
-        for i in range(1, 5):
-            freq_attrs = []
-            for attr in self.ALL_DEVICE_ATTRIBUTES['frequency_counters']['freq']:
-                if self._check_attribute_exists(f"freq{i}_{attr}"):
-                    freq_attrs.append(attr)
-            if freq_attrs:
-                available['frequency_counters'][f'freq{i}'] = freq_attrs
+
         
         # Сохранение в кэш
         self._available_attributes = available
@@ -208,8 +184,7 @@ class StatusReader:
         
         # Логирование результатов
         total_attrs = (len(available['basic']) + len(available['sma']) + 
-                      len(available['tod']) + len(available['signal_generators']) + 
-                      len(available['frequency_counters']))
+                      len(available['tod']))
         self.logger.info(f"Device attribute scan complete: {total_attrs} categories found")
         
         return available
@@ -230,26 +205,12 @@ class StatusReader:
         """
         capabilities = {
             "basic": True,  # Базовые функции всегда доступны
-            "signal_generators": False,
-            "frequency_counters": False,
             "irig": False,
             "tod": False
         }
         
         try:
-            # Проверка генераторов сигналов (gen1-gen4)
-            for i in range(1, 5):
-                gen_dir = self.device.device_path / f"gen{i}"
-                if gen_dir.exists() and gen_dir.is_dir():
-                    capabilities["signal_generators"] = True
-                    break
-            
-            # Проверка частотных счетчиков (freq1-freq4)
-            for i in range(1, 5):
-                freq_dir = self.device.device_path / f"freq{i}"
-                if freq_dir.exists() and freq_dir.is_dir():
-                    capabilities["frequency_counters"] = True
-                    break
+
             
             # Проверка IRIG-B
             irig_file = self.device.device_path / "irig_b_mode"
@@ -291,14 +252,7 @@ class StatusReader:
         if tod_attributes:
             status["tod_attributes"] = tod_attributes
         
-        # Добавляем статус генераторов только если они поддерживаются
-        capabilities = status["device_capabilities"]
-        if capabilities["signal_generators"]:
-            status["generators"] = self._get_generator_status()
-        
-        # Добавляем статус частотных счетчиков только если они поддерживаются
-        if capabilities["frequency_counters"]:
-            status["frequency_counters"] = self._get_frequency_counter_status()
+
         
         return status
     
@@ -351,69 +305,7 @@ class StatusReader:
         
         return attributes
     
-    def _get_generator_status(self) -> Dict[str, Any]:
-        """Получение статуса генераторов сигналов (только доступных)"""
-        generators = {
-            "timestamp": datetime.now().isoformat(),
-        }
-        
-        # Сначала проверяем, какие генераторы реально доступны
-        for i in range(1, 5):
-            gen_dir = self.device.device_path / f"gen{i}"
-            if not gen_dir.exists() or not gen_dir.is_dir():
-                self.logger.debug(f"Generator gen{i} not available - skipping")
-                continue
-                
-            gen_info = {}
-            gen_files = ["duty", "period", "phase", "polarity", "running", "start", "signal"]
-            
-            for file_name in gen_files:
-                # Проверяем существование файла перед чтением
-                file_path = gen_dir / file_name
-                if file_path.exists() and file_path.is_file():
-                    try:
-                        value = self.device.read_device_file(f"gen{i}/{file_name}")
-                        if value is not None:
-                            gen_info[file_name] = value
-                    except Exception as e:
-                        self.logger.warning(f"Error reading gen{i}/{file_name}: {e}")
-            
-            if gen_info:
-                generators[f"gen{i}"] = gen_info
-        
-        return generators
-    
-    def _get_frequency_counter_status(self) -> Dict[str, Any]:
-        """Получение статуса частотных счетчиков (только доступных)"""
-        freq_counters = {
-            "timestamp": datetime.now().isoformat(),
-        }
-        
-        # Сначала проверяем, какие частотные счетчики реально доступны
-        for i in range(1, 5):
-            freq_dir = self.device.device_path / f"freq{i}"
-            if not freq_dir.exists() or not freq_dir.is_dir():
-                self.logger.debug(f"Frequency counter freq{i} not available - skipping")
-                continue
-                
-            freq_info = {}
-            freq_files = ["frequency", "seconds"]
-            
-            for file_name in freq_files:
-                # Проверяем существование файла перед чтением
-                file_path = freq_dir / file_name
-                if file_path.exists() and file_path.is_file():
-                    try:
-                        value = self.device.read_device_file(f"freq{i}/{file_name}")
-                        if value is not None:
-                            freq_info[file_name] = value
-                    except Exception as e:
-                        self.logger.warning(f"Error reading freq{i}/{file_name}: {e}")
-            
-            if freq_info:
-                freq_counters[f"freq{i}"] = freq_info
-        
-        return freq_counters
+
     
     def _perform_health_checks(self) -> Dict[str, Any]:
         """Выполнение проверок состояния устройства"""
