@@ -143,6 +143,47 @@ def run_gui_mode(device_path: str = None, headless_test: bool = False):
         run_cli_mode(device_path)
 
 
+def run_web_mode(device_path: str = None, host: str = "0.0.0.0", port: int = 8000):
+    """Запуск в режиме веб интерфейса"""
+    try:
+        from src.api.web_api import QuantumPCIWebAPI
+        
+        print("QUANTUM-PCI Configuration Tool v2.0 - Web Interface")
+        print("=" * 50)
+        
+        # Создание веб API
+        web_api = QuantumPCIWebAPI(device_path, host, port)
+        
+        # Проверка доступности устройства
+        if web_api.device is None:
+            print("WARNING: QUANTUM-PCI device not found or not accessible")
+            print("Web interface will run in limited mode")
+        else:
+            print(f"Device found: {web_api.device.device_path}")
+        
+        # Информация о запуске
+        print(f"\nStarting web server...")
+        print(f"📡 Web Interface: http://{host}:{port}/")
+        print(f"📚 API Docs:      http://{host}:{port}/docs")
+        print(f"🔍 API Explorer:  http://{host}:{port}/redoc")
+        print(f"💓 Health Check:  http://{host}:{port}/api/health")
+        print("\nPress Ctrl+C to stop the server")
+        
+        # Запуск сервера
+        web_api.run(debug=False)
+        
+    except ImportError as e:
+        print(f"ERROR: Web interface dependencies not available: {e}")
+        print("Please install web dependencies:")
+        print("pip install fastapi uvicorn websockets jinja2 python-multipart")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\nWeb server stopped by user")
+    except Exception as e:
+        print(f"ERROR: Failed to start web server: {e}")
+        sys.exit(1)
+
+
 def main():
     """Главная функция"""
     parser = argparse.ArgumentParser(
@@ -152,9 +193,11 @@ def main():
 Examples:
   %(prog)s                           # Run GUI mode
   %(prog)s --cli                     # Run CLI mode
+  %(prog)s --web                     # Run Web interface
   %(prog)s --device /sys/class/timecard/ocp0  # Specify device path
   %(prog)s --cli --export status.json  # Export status to file
   %(prog)s --headless-test           # Test GUI in headless mode (auto-close)
+  %(prog)s --web --port 8080         # Run web interface on custom port
         """
     )
     
@@ -168,6 +211,26 @@ Examples:
         "--cli",
         action="store_true",
         help="Run in CLI mode instead of GUI"
+    )
+    
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Run web interface instead of GUI"
+    )
+    
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for web interface (default: 8000)"
+    )
+    
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="Host for web interface (default: 0.0.0.0)"
     )
     
     parser.add_argument(
@@ -217,6 +280,8 @@ Examples:
                     
             except Exception as e:
                 print(f"\nERROR: Export failed: {e}")
+    elif args.web:
+        run_web_mode(args.device, args.host, args.port)
     else:
         run_gui_mode(args.device, args.headless_test)
 

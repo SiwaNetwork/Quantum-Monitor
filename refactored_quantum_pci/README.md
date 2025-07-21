@@ -10,7 +10,8 @@
 - **Мониторинг в реальном времени**: Автоматическое отслеживание изменений
 - **Проверка состояния**: Комплексные health checks
 - **Экспорт данных**: Поддержка JSON и CSV форматов
-- **CLI и GUI режимы**: Гибкость использования
+- **CLI, GUI и Web режимы**: Максимальная гибкость использования
+- **Современный веб интерфейс**: Vue.js 3 + FastAPI + WebSocket
 
 ## Структура проекта
 
@@ -23,16 +24,21 @@ refactored_quantum_pci/
 │   │   └── exceptions.py   # Исключения
 │   ├── api/                # API для работы с устройством
 │   │   ├── status_reader.py # Чтение статусов
-│   │   └── web_api.py      # Web API (планируется)
+│   │   └── web_api.py      # FastAPI веб-сервер
 │   └── gui/                # Графический интерфейс
 │       ├── main_window.py  # Главное окно
 │       └── components/     # Компоненты GUI
 ├── config/                 # Конфигурационные файлы
+├── web/                    # Веб интерфейс
+│   ├── templates/          # HTML шаблоны
+│   └── static/             # CSS, JS, изображения
 ├── docs/                   # Документация
 ├── tests/                  # Тесты
 ├── examples/               # Примеры использования
 ├── main.py                # Главный исполняемый файл
+├── web_server.py          # Веб-сервер
 ├── requirements.txt       # Зависимости
+├── WEB_INTERFACE.md       # Документация веб интерфейса
 └── README.md             # Этот файл
 ```
 
@@ -79,6 +85,26 @@ python main.py --cli --export status.json
 # Указание конкретного устройства
 python main.py --cli --device /sys/class/timecard/ocp0
 ```
+
+### Веб интерфейс
+```bash
+# Запуск веб интерфейса
+python main.py --web
+
+# Веб интерфейс на другом порту
+python main.py --web --port 8080
+
+# Альтернативный запуск веб-сервера
+python web_server.py
+
+# Веб интерфейс с отладкой
+python web_server.py --debug
+```
+
+После запуска веб интерфейса откройте браузер:
+- **Веб интерфейс**: http://localhost:8000/
+- **API документация**: http://localhost:8000/docs
+- **API Explorer**: http://localhost:8000/redoc
 
 ### Программное использование
 

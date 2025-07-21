@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QUANTUM-PCI Configuration Tool v2.0</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="/static/css/main.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="container">
+                <div class="header-content">
+                    <div class="logo">
+                        <i class="fas fa-microchip"></i>
+                        <h1>QUANTUM-PCI v2.0</h1>
+                    </div>
+                    <div class="status-indicator">
+                        <span class="status-dot" :class="{ 'online': connectionStatus, 'offline': !connectionStatus }"></span>
+                        <span class="status-text">{{ connectionStatus ? 'Подключено' : 'Отключено' }}</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="container">
+                <!-- Device Status Card -->
+                <div class="card status-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-info-circle"></i> Информация об устройстве</h2>
+                        <button @click="refreshDeviceInfo" class="btn btn-secondary" :disabled="loading">
+                            <i class="fas fa-refresh" :class="{ 'fa-spin': loading }"></i>
+                            Обновить
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="deviceInfo" class="device-info-grid">
+                            <div class="info-item">
+                                <label>Путь устройства:</label>
+                                <span>{{ deviceInfo.device_path }}</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Серийный номер:</label>
+                                <span>{{ deviceInfo.serial_number }}</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Источник синхронизации:</label>
+                                <span class="clock-source">{{ deviceInfo.current_clock_source }}</span>
+                            </div>
+                            <div class="info-item">
+                                <label>GNSS синхронизация:</label>
+                                <span class="gnss-status" :class="{ 'active': deviceInfo.gnss_sync }">
+                                    <i class="fas" :class="deviceInfo.gnss_sync ? 'fa-check-circle' : 'fa-times-circle'"></i>
+                                    {{ deviceInfo.gnss_sync ? 'Активна' : 'Неактивна' }}
+                                </span>
+                            </div>
+                            <div class="info-item">
+                                <label>Последнее обновление:</label>
+                                <span>{{ formatTime(deviceInfo.timestamp) }}</span>
+                            </div>
+                        </div>
+                        <div v-else class="no-data">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Информация об устройстве недоступна
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Health Status Card -->
+                <div class="card health-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-heart-pulse"></i> Состояние системы</h2>
+                        <div class="health-indicator" :class="{ 'healthy': healthStatus?.healthy, 'unhealthy': healthStatus && !healthStatus.healthy }">
+                            <i class="fas" :class="healthStatus?.healthy ? 'fa-check-circle' : 'fa-exclamation-triangle'"></i>
+                            {{ healthStatus?.healthy ? 'Исправно' : 'Проблемы' }}
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="healthStatus" class="health-checks">
+                            <div v-for="(status, check) in healthStatus.checks" :key="check" class="health-check">
+                                <i class="fas" :class="status ? 'fa-check text-success' : 'fa-times text-danger'"></i>
+                                <span class="check-name">{{ formatCheckName(check) }}</span>
+                                <span class="check-status" :class="status ? 'pass' : 'fail'">
+                                    {{ status ? 'Пройден' : 'Ошибка' }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Clock Source Configuration -->
+                <div class="card config-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-clock"></i> Настройка источника синхронизации</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="clockSource">Источник синхронизации:</label>
+                            <select id="clockSource" v-model="selectedClockSource" class="form-control">
+                                <option value="INTERNAL">Внутренний</option>
+                                <option value="GNSS">GNSS</option>
+                                <option value="EXTERNAL">Внешний</option>
+                                <option value="PPS">PPS</option>
+                            </select>
+                            <button @click="setClockSource" class="btn btn-primary" :disabled="!selectedClockSource || loading">
+                                <i class="fas fa-save"></i>
+                                Применить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SMA Configuration -->
+                <div class="card sma-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-plug"></i> Настройка SMA портов</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="sma-config-grid">
+                            <!-- SMA Inputs -->
+                            <div class="sma-section">
+                                <h3><i class="fas fa-arrow-right"></i> Входы</h3>
+                                <div v-if="smaConfig" class="sma-ports">
+                                    <div v-for="(signal, port) in smaConfig.inputs" :key="port" class="sma-port">
+                                        <label>{{ port }}:</label>
+                                        <select v-model="smaConfig.inputs[port]" class="form-control">
+                                            <option value="PPS1">PPS1</option>
+                                            <option value="PPS2">PPS2</option>
+                                            <option value="TS1">TS1</option>
+                                            <option value="TS2">TS2</option>
+                                            <option value="NONE">Не используется</option>
+                                        </select>
+                                        <button @click="setSMAInput(port, smaConfig.inputs[port])" class="btn btn-sm btn-primary">
+                                            <i class="fas fa-save"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- SMA Outputs -->
+                            <div class="sma-section">
+                                <h3><i class="fas fa-arrow-left"></i> Выходы</h3>
+                                <div v-if="smaConfig" class="sma-ports">
+                                    <div v-for="(signal, port) in smaConfig.outputs" :key="port" class="sma-port">
+                                        <label>{{ port }}:</label>
+                                        <select v-model="smaConfig.outputs[port]" class="form-control">
+                                            <option value="PHC">PHC</option>
+                                            <option value="GNSS1PPS">GNSS1PPS</option>
+                                            <option value="GNSS2PPS">GNSS2PPS</option>
+                                            <option value="MAC">MAC</option>
+                                            <option value="NONE">Не используется</option>
+                                        </select>
+                                        <button @click="setSMAOutput(port, smaConfig.outputs[port])" class="btn btn-sm btn-primary">
+                                            <i class="fas fa-save"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Real-time Monitoring -->
+                <div class="card monitoring-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-chart-line"></i> Мониторинг в реальном времени</h2>
+                        <div class="monitoring-controls">
+                            <button @click="toggleMonitoring" class="btn" :class="monitoringActive ? 'btn-danger' : 'btn-success'">
+                                <i class="fas" :class="monitoringActive ? 'fa-stop' : 'fa-play'"></i>
+                                {{ monitoringActive ? 'Остановить' : 'Запустить' }}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="monitoring-display">
+                            <div v-if="monitoringData.length > 0" class="monitoring-log">
+                                <div v-for="(entry, index) in monitoringData.slice(-10)" :key="index" class="log-entry">
+                                    <span class="timestamp">{{ formatTime(entry.timestamp) }}</span>
+                                    <span class="event-type">{{ entry.type }}</span>
+                                    <span class="event-data">{{ entry.message }}</span>
+                                </div>
+                            </div>
+                            <div v-else class="no-monitoring-data">
+                                <i class="fas fa-info-circle"></i>
+                                Мониторинг неактивен
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Notification Toast -->
+        <div v-if="notification" class="notification" :class="notification.type">
+            <i class="fas" :class="notification.type === 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle'"></i>
+            <span>{{ notification.message }}</span>
+            <button @click="notification = null" class="close-btn">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
