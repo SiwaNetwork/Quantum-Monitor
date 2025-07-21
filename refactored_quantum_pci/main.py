@@ -6,6 +6,7 @@
 import sys
 import argparse
 import logging
+import os
 from pathlib import Path
 
 # Добавление текущей директории в путь Python
@@ -28,6 +29,26 @@ def setup_logging(level: str = "INFO"):
             logging.FileHandler('quantum_pci.log')
         ]
     )
+
+
+def check_gui_available():
+    """Проверка доступности GUI компонентов"""
+    try:
+        # Проверяем наличие DISPLAY для X11 приложений
+        if os.environ.get('DISPLAY') is None:
+            return False, "No DISPLAY environment variable found"
+        
+        # Проверяем наличие tkinter
+        import tkinter as tk
+        # Попытка создания тестового окна
+        test_root = tk.Tk()
+        test_root.withdraw()  # Скрываем окно
+        test_root.destroy()
+        return True, "GUI available"
+    except ImportError:
+        return False, "tkinter module not available"
+    except Exception as e:
+        return False, f"GUI error: {e}"
 
 
 def run_cli_mode(device_path: str = None):
@@ -79,20 +100,47 @@ def run_cli_mode(device_path: str = None):
         sys.exit(1)
 
 
-def run_gui_mode(device_path: str = None):
-    """Запуск в режиме GUI"""
+def run_gui_mode(device_path: str = None, headless_test: bool = False):
+    """Запуск в режиме GUI с проверкой зависимостей"""
+    
+    # Проверка доступности GUI
+    gui_available, gui_message = check_gui_available()
+    
+    if not gui_available:
+        print(f"ERROR: GUI not available - {gui_message}")
+        print("Running in CLI mode instead...")
+        run_cli_mode(device_path)
+        return
+    
     try:
         # Импортируем GUI только при необходимости
         from src.gui.main_window import QuantumPCIGUI
-        app = QuantumPCIGUI(device_path)
+        app = QuantumPCIGUI(device_path, headless_mode=headless_test)
+        
+        if headless_test:
+            print("Running GUI in headless test mode...")
+            # Автоматическое закрытие для тестирования
+            def auto_close():
+                print("Auto-closing GUI after 3 seconds...")
+                try:
+                    app.root.quit()
+                    app.root.destroy()
+                except Exception as e:
+                    print(f"Error during auto-close: {e}")
+            
+            app.root.after(3000, auto_close)  # Закрыть через 3 секунды
+        
         app.run()
+        
     except ImportError as e:
         print(f"Error: GUI dependencies not available: {e}")
         print("Please install tkinter: sudo apt-get install python3-tk")
-        sys.exit(1)
+        print("Running in CLI mode instead...")
+        run_cli_mode(device_path)
     except Exception as e:
         print(f"Error starting GUI: {e}")
-        sys.exit(1)
+        print("Running in CLI mode instead...")
+        run_cli_mode(device_path)
 
 
 def main():
@@ -106,6 +154,7 @@ Examples:
   %(prog)s --cli                     # Run CLI mode
   %(prog)s --device /sys/class/timecard/ocp0  # Specify device path
   %(prog)s --cli --export status.json  # Export status to file
+  %(prog)s --headless-test           # Test GUI in headless mode (auto-close)
         """
     )
     
@@ -119,6 +168,12 @@ Examples:
         "--cli",
         action="store_true",
         help="Run in CLI mode instead of GUI"
+    )
+    
+    parser.add_argument(
+        "--headless-test",
+        action="store_true",
+        help="Test GUI in headless mode (auto-close after 3 seconds)"
     )
     
     parser.add_argument(
@@ -163,7 +218,7 @@ Examples:
             except Exception as e:
                 print(f"\nERROR: Export failed: {e}")
     else:
-        run_gui_mode(args.device)
+        run_gui_mode(args.device, args.headless_test)
 
 
 if __name__ == "__main__":

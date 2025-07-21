@@ -90,6 +90,36 @@ def safe_run_command(command, timeout_sec=30, show_error=True):
 class StatusReader:
     """Класс для чтения и мониторинга статусов QUANTUM-PCI устройства"""
     
+    # Полный список атрибутов драйвера на основе анализа ptp_ocp.c
+    ALL_DEVICE_ATTRIBUTES = {
+        # Основные атрибуты устройства
+        'basic': [
+            'serialnum', 'gnss_sync', 'clock_source', 'available_clock_sources',
+            'external_pps_cable_delay', 'internal_pps_cable_delay', 'holdover',
+            'mac_i2c', 'utc_tai_offset', 'ts_window_adjust', 'irig_b_mode',
+            'clock_status_drift', 'clock_status_offset'
+        ],
+        # SMA интерфейсы
+        'sma': [
+            'sma1', 'sma2', 'sma3', 'sma4',
+            'available_sma_inputs', 'available_sma_outputs'
+        ],
+        # TOD (Time of Day) протокол
+        'tod': [
+            'tod_protocol', 'available_tod_protocols',
+            'tod_baud_rate', 'available_tod_baud_rates',
+            'tod_correction'
+        ],
+        # Генераторы сигналов (динамически проверяются)
+        'signal_generators': {
+            'signal': ['duty', 'period', 'phase', 'polarity', 'running', 'start', 'signal']
+        },
+        # Частотные счетчики (динамически проверяются)
+        'frequency_counters': {
+            'freq': ['frequency', 'seconds']
+        }
+    }
+    
     def __init__(self, device: Optional[QuantumPCIDevice] = None, logger: Optional[logging.Logger] = None):
         """
         Инициализация StatusReader
@@ -106,6 +136,93 @@ class StatusReader:
         self._stop_flag = False
         self._stop_monitoring = False
         
+        # Кэш для доступных атрибутов
+        self._available_attributes = None
+        self._last_scan_time = None
+        
+    def scan_available_attributes(self, force_rescan: bool = False) -> Dict[str, List[str]]:
+        """
+        Сканирование всех доступных атрибутов устройства
+        
+        Args:
+            force_rescan: Принудительное повторное сканирование
+            
+        Returns:
+            Словарь с доступными атрибутами по категориям
+        """
+        # Проверяем кэш (обновляем каждые 60 секунд)
+        current_time = time.time()
+        if (not force_rescan and self._available_attributes is not None and 
+            self._last_scan_time is not None and 
+            current_time - self._last_scan_time < 60):
+            return self._available_attributes
+        
+        available = {
+            'basic': [],
+            'sma': [],
+            'tod': [],
+            'signal_generators': {},
+            'frequency_counters': {}
+        }
+        
+        if not self.device or not self.device.device_path:
+            self.logger.warning("Device not available for attribute scanning")
+            return available
+        
+        # Сканирование основных атрибутов
+        for attr in self.ALL_DEVICE_ATTRIBUTES['basic']:
+            if self._check_attribute_exists(attr):
+                available['basic'].append(attr)
+        
+        # Сканирование SMA атрибутов
+        for attr in self.ALL_DEVICE_ATTRIBUTES['sma']:
+            if self._check_attribute_exists(attr):
+                available['sma'].append(attr)
+        
+        # Сканирование TOD атрибутов
+        for attr in self.ALL_DEVICE_ATTRIBUTES['tod']:
+            if self._check_attribute_exists(attr):
+                available['tod'].append(attr)
+        
+        # Сканирование генераторов сигналов
+        for i in range(1, 5):
+            gen_attrs = []
+            for attr in self.ALL_DEVICE_ATTRIBUTES['signal_generators']['signal']:
+                if self._check_attribute_exists(f"signal{i}_{attr}"):
+                    gen_attrs.append(attr)
+            if gen_attrs:
+                available['signal_generators'][f'signal{i}'] = gen_attrs
+        
+        # Сканирование частотных счетчиков
+        for i in range(1, 5):
+            freq_attrs = []
+            for attr in self.ALL_DEVICE_ATTRIBUTES['frequency_counters']['freq']:
+                if self._check_attribute_exists(f"freq{i}_{attr}"):
+                    freq_attrs.append(attr)
+            if freq_attrs:
+                available['frequency_counters'][f'freq{i}'] = freq_attrs
+        
+        # Сохранение в кэш
+        self._available_attributes = available
+        self._last_scan_time = current_time
+        
+        # Логирование результатов
+        total_attrs = (len(available['basic']) + len(available['sma']) + 
+                      len(available['tod']) + len(available['signal_generators']) + 
+                      len(available['frequency_counters']))
+        self.logger.info(f"Device attribute scan complete: {total_attrs} categories found")
+        
+        return available
+    
+    def _check_attribute_exists(self, attr_name: str) -> bool:
+        """Проверка существования атрибута на устройстве"""
+        try:
+            attr_path = self.device.device_path / attr_name
+            return attr_path.exists() and attr_path.is_file()
+        except Exception as e:
+            self.logger.debug(f"Error checking attribute {attr_name}: {e}")
+            return False
+    
     def get_device_capabilities(self) -> Dict[str, bool]:
         """
         Определение доступных возможностей устройства
@@ -150,11 +267,12 @@ class StatusReader:
         return capabilities
 
     def get_full_status(self) -> Dict[str, Any]:
-        """Получение полного статуса устройства"""
+        """Получение полного статуса устройства со всеми доступными параметрами"""
         status = {
             "timestamp": datetime.now().isoformat(),
             "device_info": self.device.get_device_info(),
             "device_capabilities": self.get_device_capabilities(),
+            "available_attributes": self.scan_available_attributes(),
             "clock_status": self.device.get_clock_status(),
             "sma_configuration": self.device.get_sma_configuration(),
             "health_status": {
@@ -162,6 +280,16 @@ class StatusReader:
                 "checks": self._perform_health_checks()
             }
         }
+        
+        # Добавляем все доступные основные атрибуты
+        basic_attributes = self._get_all_basic_attributes()
+        if basic_attributes:
+            status["basic_attributes"] = basic_attributes
+        
+        # Добавляем TOD атрибуты если доступны
+        tod_attributes = self._get_tod_attributes()
+        if tod_attributes:
+            status["tod_attributes"] = tod_attributes
         
         # Добавляем статус генераторов только если они поддерживаются
         capabilities = status["device_capabilities"]
@@ -190,6 +318,38 @@ class StatusReader:
         }
         
         return extended_status
+    
+    def _get_all_basic_attributes(self) -> Dict[str, Any]:
+        """Получение всех доступных основных атрибутов"""
+        attributes = {}
+        available = self.scan_available_attributes()
+        
+        for attr in available.get('basic', []):
+            try:
+                value = self.device.read_device_file(attr)
+                if value is not None:
+                    attributes[attr] = value
+            except Exception as e:
+                self.logger.warning(f"Error reading basic attribute {attr}: {e}")
+                attributes[attr] = f"ERROR: {e}"
+        
+        return attributes
+    
+    def _get_tod_attributes(self) -> Dict[str, Any]:
+        """Получение атрибутов TOD (Time of Day) протокола"""
+        attributes = {}
+        available = self.scan_available_attributes()
+        
+        for attr in available.get('tod', []):
+            try:
+                value = self.device.read_device_file(attr)
+                if value is not None:
+                    attributes[attr] = value
+            except Exception as e:
+                self.logger.warning(f"Error reading TOD attribute {attr}: {e}")
+                attributes[attr] = f"ERROR: {e}"
+        
+        return attributes
     
     def _get_generator_status(self) -> Dict[str, Any]:
         """Получение статуса генераторов сигналов (только доступных)"""

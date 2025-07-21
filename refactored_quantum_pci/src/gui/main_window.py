@@ -20,15 +20,17 @@ from .components.status_panel import StatusPanel
 class QuantumPCIGUI:
     """Главное окно GUI приложения"""
     
-    def __init__(self, device_path: Optional[str] = None):
+    def __init__(self, device_path: Optional[str] = None, headless_mode: bool = False):
         """
         Инициализация GUI
         
         Args:
             device_path: Путь к устройству (если не указан, происходит автопоиск)
+            headless_mode: Режим без блокирующих диалогов
         """
         # Настройка логирования
         self.logger = logging.getLogger(__name__)
+        self.headless_mode = headless_mode
         
         # Инициализация основных компонентов
         self.device = None
@@ -40,6 +42,10 @@ class QuantumPCIGUI:
         self.root.title("QUANTUM-PCI Configuration Tool v2.0")
         self.root.geometry("1200x800")
         self.root.resizable(True, True)
+        
+        # В headless режиме скрываем окно
+        if self.headless_mode:
+            self.root.withdraw()
         
         # Инициализация устройства
         self._init_device(device_path)
@@ -60,10 +66,26 @@ class QuantumPCIGUI:
             self.logger.info("Device initialized successfully")
         except DeviceNotFoundError as e:
             self.logger.error(f"Device not found: {e}")
-            messagebox.showerror("Device Error", f"QUANTUM-PCI device not found:\n{e}")
+            if not self.headless_mode:
+                # В интерактивном режиме показываем диалог асинхронно
+                self.root.after(100, lambda: self._show_device_error("Device Error", f"QUANTUM-PCI device not found:\n{e}"))
+            else:
+                print(f"Device not found (headless mode): {e}")
         except Exception as e:
             self.logger.error(f"Error initializing device: {e}")
-            messagebox.showerror("Error", f"Error initializing device:\n{e}")
+            if not self.headless_mode:
+                # В интерактивном режиме показываем диалог асинхронно
+                self.root.after(100, lambda: self._show_device_error("Error", f"Error initializing device:\n{e}"))
+            else:
+                print(f"Device initialization error (headless mode): {e}")
+    
+    def _show_device_error(self, title: str, message: str):
+        """Безопасный показ ошибки устройства"""
+        try:
+            messagebox.showerror(title, message)
+        except Exception as e:
+            self.logger.error(f"Error showing dialog: {e}")
+            print(f"{title}: {message}")
     
     def _create_menu(self):
         """Создание главного меню"""
