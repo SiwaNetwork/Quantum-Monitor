@@ -3,6 +3,7 @@
 const { createApp } = Vue;
 
 createApp({
+    delimiters: ['[[', ']]'],
     data() {
         return {
             // Connection status
