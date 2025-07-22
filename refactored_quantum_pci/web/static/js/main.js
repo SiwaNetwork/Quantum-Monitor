@@ -17,6 +17,7 @@ createApp({
             deviceInfo: null,
             healthStatus: null,
             smaConfig: null,
+            smaOptions: null,  // Add this to store available SMA options
             
             // Form data
             selectedClockSource: '',
@@ -81,20 +82,24 @@ createApp({
             
             try {
                 // Load device info, health status, and SMA config in parallel
-                const [deviceResponse, statusResponse, smaResponse] = await Promise.all([
+                const [deviceResponse, statusResponse, smaResponse, smaOptionsResponse] = await Promise.all([
                     axios.get(`${this.apiBase}/device/info`),
                     axios.get(`${this.apiBase}/device/status`),
-                    axios.get(`${this.apiBase}/device/sma-config`)
+                    axios.get(`${this.apiBase}/device/sma-config`),
+                    axios.get(`${this.apiBase}/device/sma-options`)
                 ]);
                 
                 this.deviceInfo = deviceResponse.data;
                 this.healthStatus = statusResponse.data.health_status;
                 this.smaConfig = smaResponse.data;
+                this.smaOptions = smaOptionsResponse.data;
                 
                 // Set default clock source
                 this.selectedClockSource = this.deviceInfo.current_clock_source;
                 
                 console.log('Initial data loaded successfully');
+                console.log('Available SMA inputs:', this.smaOptions.available_inputs);
+                console.log('Available SMA outputs:', this.smaOptions.available_outputs);
             } catch (error) {
                 console.error('Failed to load initial data:', error);
                 this.showNotification('Ошибка загрузки данных устройства', 'error');
@@ -202,13 +207,15 @@ createApp({
         
         async refreshData() {
             try {
-                const [statusResponse, smaResponse] = await Promise.all([
+                const [statusResponse, smaResponse, smaOptionsResponse] = await Promise.all([
                     axios.get(`${this.apiBase}/device/status`),
-                    axios.get(`${this.apiBase}/device/sma-config`)
+                    axios.get(`${this.apiBase}/device/sma-config`),
+                    axios.get(`${this.apiBase}/device/sma-options`)
                 ]);
                 
                 this.healthStatus = statusResponse.data.health_status;
                 this.smaConfig = smaResponse.data;
+                this.smaOptions = smaOptionsResponse.data;
                 
                 console.log('Data refreshed');
             } catch (error) {

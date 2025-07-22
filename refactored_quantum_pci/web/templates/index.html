@@ -126,15 +126,14 @@
                             <!-- SMA Inputs -->
                             <div class="sma-section">
                                 <h3><i class="fas fa-arrow-right"></i> Входы</h3>
-                                <div v-if="smaConfig" class="sma-ports">
+                                <div v-if="smaConfig && smaOptions" class="sma-ports">
                                     <div v-for="(signal, port) in smaConfig.inputs" :key="port" class="sma-port">
                                         <label>${ port }:</label>
                                         <select v-model="smaConfig.inputs[port]" class="form-control">
-                                            <option value="PPS1">PPS1</option>
-                                            <option value="PPS2">PPS2</option>
-                                            <option value="TS1">TS1</option>
-                                            <option value="TS2">TS2</option>
-                                            <option value="NONE">Не используется</option>
+                                            <option value="None">Не используется</option>
+                                            <option v-for="input in smaOptions.available_inputs" :key="input" :value="input">
+                                                ${ input }
+                                            </option>
                                         </select>
                                         <button @click="setSMAInput(port, smaConfig.inputs[port])" class="btn btn-sm btn-primary">
                                             <i class="fas fa-save"></i>
@@ -146,15 +145,14 @@
                             <!-- SMA Outputs -->
                             <div class="sma-section">
                                 <h3><i class="fas fa-arrow-left"></i> Выходы</h3>
-                                <div v-if="smaConfig" class="sma-ports">
+                                <div v-if="smaConfig && smaOptions" class="sma-ports">
                                     <div v-for="(signal, port) in smaConfig.outputs" :key="port" class="sma-port">
                                         <label>${ port }:</label>
                                         <select v-model="smaConfig.outputs[port]" class="form-control">
-                                            <option value="PHC">PHC</option>
-                                            <option value="GNSS1PPS">GNSS1PPS</option>
-                                            <option value="GNSS2PPS">GNSS2PPS</option>
-                                            <option value="MAC">MAC</option>
-                                            <option value="NONE">Не используется</option>
+                                            <option value="None">Не используется</option>
+                                            <option v-for="output in smaOptions.available_outputs" :key="output" :value="output">
+                                                ${ output }
+                                            </option>
                                         </select>
                                         <button @click="setSMAOutput(port, smaConfig.outputs[port])" class="btn btn-sm btn-primary">
                                             <i class="fas fa-save"></i>
