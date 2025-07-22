@@ -21,7 +21,7 @@
                     </div>
                     <div class="status-indicator">
                         <span class="status-dot" :class="{ 'online': connectionStatus, 'offline': !connectionStatus }"></span>
-                        <span class="status-text">{{ connectionStatus ? 'Подключено' : 'Отключено' }}</span>
+                        <span class="status-text">[[ connectionStatus ? 'Подключено' : 'Отключено' ]]</span>
                     </div>
                 </div>
             </div>
@@ -43,26 +43,26 @@
                         <div v-if="deviceInfo" class="device-info-grid">
                             <div class="info-item">
                                 <label>Путь устройства:</label>
-                                <span>{{ deviceInfo.device_path }}</span>
+                                <span>[[ deviceInfo.device_path ]]</span>
                             </div>
                             <div class="info-item">
                                 <label>Серийный номер:</label>
-                                <span>{{ deviceInfo.serial_number }}</span>
+                                <span>[[ deviceInfo.serial_number ]]</span>
                             </div>
                             <div class="info-item">
                                 <label>Источник синхронизации:</label>
-                                <span class="clock-source">{{ deviceInfo.current_clock_source }}</span>
+                                <span class="clock-source">[[ deviceInfo.current_clock_source ]]</span>
                             </div>
                             <div class="info-item">
                                 <label>GNSS синхронизация:</label>
                                 <span class="gnss-status" :class="{ 'active': deviceInfo.gnss_sync }">
                                     <i class="fas" :class="deviceInfo.gnss_sync ? 'fa-check-circle' : 'fa-times-circle'"></i>
-                                    {{ deviceInfo.gnss_sync ? 'Активна' : 'Неактивна' }}
+                                    [[ deviceInfo.gnss_sync ? 'Активна' : 'Неактивна' ]]
                                 </span>
                             </div>
                             <div class="info-item">
                                 <label>Последнее обновление:</label>
-                                <span>{{ formatTime(deviceInfo.timestamp) }}</span>
+                                <span>[[ formatTime(deviceInfo.timestamp) ]]</span>
                             </div>
                         </div>
                         <div v-else class="no-data">
@@ -78,16 +78,16 @@
                         <h2><i class="fas fa-heart-pulse"></i> Состояние системы</h2>
                         <div class="health-indicator" :class="{ 'healthy': healthStatus?.healthy, 'unhealthy': healthStatus && !healthStatus.healthy }">
                             <i class="fas" :class="healthStatus?.healthy ? 'fa-check-circle' : 'fa-exclamation-triangle'"></i>
-                            {{ healthStatus?.healthy ? 'Исправно' : 'Проблемы' }}
+                            [[ healthStatus?.healthy ? 'Исправно' : 'Проблемы' ]]
                         </div>
                     </div>
                     <div class="card-body">
                         <div v-if="healthStatus" class="health-checks">
                             <div v-for="(status, check) in healthStatus.checks" :key="check" class="health-check">
                                 <i class="fas" :class="status ? 'fa-check text-success' : 'fa-times text-danger'"></i>
-                                <span class="check-name">{{ formatCheckName(check) }}</span>
+                                <span class="check-name">[[ formatCheckName(check) ]]</span>
                                 <span class="check-status" :class="status ? 'pass' : 'fail'">
-                                    {{ status ? 'Пройден' : 'Ошибка' }}
+                                    [[ status ? 'Пройден' : 'Ошибка' ]]
                                 </span>
                             </div>
                         </div>
@@ -128,7 +128,7 @@
                                 <h3><i class="fas fa-arrow-right"></i> Входы</h3>
                                 <div v-if="smaConfig" class="sma-ports">
                                     <div v-for="(signal, port) in smaConfig.inputs" :key="port" class="sma-port">
-                                        <label>{{ port }}:</label>
+                                        <label>[[ port ]]:</label>
                                         <select v-model="smaConfig.inputs[port]" class="form-control">
                                             <option value="PPS1">PPS1</option>
                                             <option value="PPS2">PPS2</option>
@@ -148,7 +148,7 @@
                                 <h3><i class="fas fa-arrow-left"></i> Выходы</h3>
                                 <div v-if="smaConfig" class="sma-ports">
                                     <div v-for="(signal, port) in smaConfig.outputs" :key="port" class="sma-port">
-                                        <label>{{ port }}:</label>
+                                        <label>[[ port ]]:</label>
                                         <select v-model="smaConfig.outputs[port]" class="form-control">
                                             <option value="PHC">PHC</option>
                                             <option value="GNSS1PPS">GNSS1PPS</option>
@@ -173,7 +173,7 @@
                         <div class="monitoring-controls">
                             <button @click="toggleMonitoring" class="btn" :class="monitoringActive ? 'btn-danger' : 'btn-success'">
                                 <i class="fas" :class="monitoringActive ? 'fa-stop' : 'fa-play'"></i>
-                                {{ monitoringActive ? 'Остановить' : 'Запустить' }}
+                                [[ monitoringActive ? 'Остановить' : 'Запустить' ]]
                             </button>
                         </div>
                     </div>
@@ -181,9 +181,9 @@
                         <div class="monitoring-display">
                             <div v-if="monitoringData.length > 0" class="monitoring-log">
                                 <div v-for="(entry, index) in monitoringData.slice(-10)" :key="index" class="log-entry">
-                                    <span class="timestamp">{{ formatTime(entry.timestamp) }}</span>
-                                    <span class="event-type">{{ entry.type }}</span>
-                                    <span class="event-data">{{ entry.message }}</span>
+                                    <span class="timestamp">[[ formatTime(entry.timestamp) ]]</span>
+                                    <span class="event-type">[[ entry.type ]]</span>
+                                    <span class="event-data">[[ entry.message ]]</span>
                                 </div>
                             </div>
                             <div v-else class="no-monitoring-data">
@@ -199,7 +199,7 @@
         <!-- Notification Toast -->
         <div v-if="notification" class="notification" :class="notification.type">
             <i class="fas" :class="notification.type === 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle'"></i>
-            <span>{{ notification.message }}</span>
+            <span>[[ notification.message ]]</span>
             <button @click="notification = null" class="close-btn">
                 <i class="fas fa-times"></i>
             </button>
