@@ -1,0 +1,34 @@
+2025-07-22 14:31:57,169 - __main__ - INFO - Starting QUANTUM-PCI Web Interface v2.0
+2025-07-22 14:31:57,169 - __main__ - INFO - Device: auto-detect
+2025-07-22 14:31:57,169 - __main__ - INFO - Host: 0.0.0.0
+2025-07-22 14:31:57,169 - __main__ - INFO - Port: 8000
+2025-07-22 14:31:57,169 - __main__ - INFO - Debug mode: False
+2025-07-22 14:31:57,170 - src.core.device - INFO - Starting safe device detection...
+2025-07-22 14:31:57,170 - src.core.device - WARNING - Timecard directory not found or not accessible
+2025-07-22 14:31:57,170 - src.api.web_api - ERROR - Failed to initialize device: No QUANTUM-PCI device found
+2025-07-22 14:31:57,172 - __main__ - WARNING - QUANTUM-PCI device not found or not accessible
+2025-07-22 14:31:57,172 - __main__ - WARNING - Web interface will run in limited mode
+2025-07-22 14:31:57,172 - __main__ - INFO - Starting web server at http://0.0.0.0:8000
+2025-07-22 14:31:57,172 - __main__ - INFO - Press Ctrl+C to stop the server
+INFO:     Started server process [3089]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8000): [errno 98] address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+2025-07-22 14:31:57,184 - __main__ - INFO - Web server stopped
+
+============================================================
+🚀 QUANTUM-PCI Web Interface v2.0
+============================================================
+📡 Web Interface: http://0.0.0.0:8000/
+📚 API Docs:      http://0.0.0.0:8000/docs
+🔍 API Explorer:  http://0.0.0.0:8000/redoc
+💓 Health Check:  http://0.0.0.0:8000/api/health
+============================================================
+⚠️  Device Status: Not found (limited mode)
+📝 Log Level:     INFO
+🔧 Debug Mode:    Disabled
+============================================================
+Press Ctrl+C to stop the server
+
