@@ -304,6 +304,20 @@ class QuantumPCIWebAPI:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
         
+        @self.app.get("/api/device/sma-options")
+        async def get_sma_options():
+            """Получение доступных опций для SMA портов"""
+            if not self.device:
+                raise HTTPException(status_code=503, detail="Device not available")
+            
+            try:
+                return {
+                    "available_inputs": self.device.get_available_sma_inputs(),
+                    "available_outputs": self.device.get_available_sma_outputs()
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             """WebSocket для real-time обновлений"""
